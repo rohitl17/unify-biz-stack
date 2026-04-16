@@ -1,0 +1,112 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System user with role-based access",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["admin", "sales", "support", "success", "marketing"] },
+        "photoURL": { "type": "string", "format": "url" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Lead": {
+      "title": "Lead",
+      "description": "Sales lead or prospect",
+      "type": "object",
+      "properties": {
+        "company": { "type": "string" },
+        "contactName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "status": { "type": "string", "enum": ["new", "contacted", "qualified", "lost"] },
+        "value": { "type": "number" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["company", "status", "ownerId", "createdAt"]
+    },
+    "Ticket": {
+      "title": "Ticket",
+      "description": "Customer support ticket",
+      "type": "object",
+      "properties": {
+        "subject": { "type": "string" },
+        "description": { "type": "string" },
+        "priority": { "type": "string", "enum": ["low", "medium", "high", "urgent"] },
+        "status": { "type": "string", "enum": ["open", "in-progress", "resolved", "closed"] },
+        "customerId": { "type": "string" },
+        "assignedTo": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["subject", "status", "priority", "createdAt"]
+    },
+    "Campaign": {
+      "title": "Campaign",
+      "description": "Marketing campaign",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["email", "social", "webinar", "ads"] },
+        "status": { "type": "string", "enum": ["planned", "active", "completed", "paused"] },
+        "budget": { "type": "number" },
+        "leadsGenerated": { "type": "integer" },
+        "startDate": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "type", "status", "startDate"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Account managed by Customer Success",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "healthScore": { "type": "integer" },
+        "plan": { "type": "string", "enum": ["basic", "pro", "enterprise"] },
+        "renewalDate": { "type": "string", "format": "date-time" },
+        "successManagerId": { "type": "string" }
+      },
+      "required": ["name", "healthScore", "plan"]
+    },
+    "MarketingEngagement": {
+      "title": "MarketingEngagement",
+      "description": "Individual customer interaction with marketing content",
+      "type": "object",
+      "properties": {
+        "customerEmail": { "type": "string", "format": "email" },
+        "activityType": { "type": "string", "enum": ["email_open", "website_visit", "webinar_registration", "ad_click"] },
+        "contentName": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["customerEmail", "activityType", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and roles"
+    },
+    "/leads/{leadId}": {
+      "schema": "Lead",
+      "description": "Sales leads"
+    },
+    "/tickets/{ticketId}": {
+      "schema": "Ticket",
+      "description": "Support tickets"
+    },
+    "/campaigns/{campaignId}": {
+      "schema": "Campaign",
+      "description": "Marketing campaigns"
+    },
+    "/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Customer accounts"
+    },
+    "/marketingEngagement/{engagementId}": {
+      "schema": "MarketingEngagement",
+      "description": "Individual customer marketing activities"
+    }
+  }
+}
