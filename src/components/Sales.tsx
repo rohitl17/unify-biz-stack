@@ -29,6 +29,8 @@ interface Lead {
   contactName: string;
   email: string;
   status: 'new' | 'contacted' | 'qualified' | 'lost';
+  stage: 'discovery' | 'proposal' | 'negotiation' | 'closed_won' | 'closed_lost';
+  leadScore: number;
   value: number;
   ownerId: string;
   createdAt: any;
@@ -57,9 +59,13 @@ export default function Sales({ onSelectCustomer }: SalesProps) {
   const handleAddLead = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Basic lead scoring logic simulated:
+      const score = Math.floor(Math.random() * 60) + 20; // Simulated logic
       await addDoc(collection(db, 'leads'), {
         ...newLead,
         status: 'new',
+        stage: 'discovery',
+        leadScore: score,
         ownerId: user?.uid,
         createdAt: new Date().toISOString()
       });
@@ -70,9 +76,9 @@ export default function Sales({ onSelectCustomer }: SalesProps) {
     }
   };
 
-  const updateStatus = async (leadId: string, status: Lead['status']) => {
+  const updateField = async (leadId: string, field: string, value: any) => {
     try {
-      await updateDoc(doc(db, 'leads', leadId), { status });
+      await updateDoc(doc(db, 'leads', leadId), { [field]: value });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `leads/${leadId}`);
     }
@@ -80,9 +86,15 @@ export default function Sales({ onSelectCustomer }: SalesProps) {
 
   const stats = [
     { label: 'Active Leads', value: leads.length, icon: Users, color: 'text-accent-sales', bg: 'bg-[#dbeafe]' },
-    { label: 'Qualified', value: leads.filter(l => l.status === 'qualified').length, icon: CheckCircle2, color: 'text-accent-cs', bg: 'bg-[#dcfce7]' },
+    { label: 'Avg lead Score', value: leads.length > 0 ? Math.round(leads.reduce((acc,l) => acc + (l.leadScore || 0), 0) / leads.length) : 0, icon: CheckCircle2, color: 'text-accent-cs', bg: 'bg-[#dcfce7]' },
     { label: 'Pipeline Value', value: `$${leads.reduce((acc, l) => acc + (l.value || 0), 0).toLocaleString()}`, icon: TrendingUp, color: 'text-accent-marketing', bg: 'bg-[#ede9fe]' },
   ];
+
+  const getScoreColor = (score: number) => {
+    if (score >= 70) return 'text-emerald-600 bg-emerald-50';
+    if (score >= 40) return 'text-amber-600 bg-amber-50';
+    return 'text-red-600 bg-red-50';
+  };
 
   return (
     <div className="space-y-6">
@@ -151,7 +163,12 @@ export default function Sales({ onSelectCustomer }: SalesProps) {
                     </div>
                     <div>
                       <h4 className="font-extrabold text-bento-text leading-tight tracking-tight">{lead.company}</h4>
-                      <p className="text-[10px] text-bento-muted font-bold uppercase tracking-widest mt-0.5">{lead.contactName}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="text-[10px] text-bento-muted font-bold uppercase tracking-widest">{lead.contactName}</p>
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${getScoreColor(lead.leadScore || 0)}`}>
+                          SCORE: {lead.leadScore || 0}
+                        </span>
+                      </div>
                     </div>
                   </div>
                   <button 
@@ -163,26 +180,48 @@ export default function Sales({ onSelectCustomer }: SalesProps) {
                 </div>
 
                 <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <p className="text-[9px] text-bento-muted font-extrabold uppercase tracking-widest">Status</p>
+                      <select 
+                        value={lead.status} 
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => updateField(lead.id, 'status', e.target.value)}
+                        className={`w-full py-1 text-[11px] font-bold rounded-lg border-none outline-none appearance-none cursor-pointer text-center ${
+                          lead.status === 'qualified' ? 'pill-cs' :
+                          lead.status === 'contacted' ? 'pill-sales' :
+                          lead.status === 'lost' ? 'bg-red-50 text-red-500' :
+                          'bg-gray-100 text-bento-muted'
+                        }`}
+                      >
+                        <option value="new">New</option>
+                        <option value="contacted">Contacted</option>
+                        <option value="qualified">Qualified</option>
+                        <option value="lost">Lost</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[9px] text-bento-muted font-extrabold uppercase tracking-widest">Stage</p>
+                      <select 
+                        value={lead.stage || 'discovery'} 
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => updateField(lead.id, 'stage', e.target.value)}
+                        className="w-full py-1 text-[11px] font-bold rounded-lg border-none outline-none appearance-none cursor-pointer text-center bg-accent-marketing/5 text-accent-marketing"
+                      >
+                        <option value="discovery">Discovery</option>
+                        <option value="proposal">Proposal</option>
+                        <option value="negotiation">Negotiation</option>
+                        <option value="closed_won">Closed Won</option>
+                        <option value="closed_lost">Closed Lost</option>
+                      </select>
+                    </div>
+                  </div>
+
                   <div className="flex items-end justify-between">
                     <div>
-                      <p className="text-[10px] text-bento-muted font-extrabold uppercase tracking-widest mb-1">Estimated Value</p>
+                      <p className="text-[10px] text-bento-muted font-extrabold uppercase tracking-widest mb-1">Deal Value</p>
                       <p className="text-2xl font-black text-bento-text tracking-tighter">${(lead.value || 0).toLocaleString()}</p>
                     </div>
-                    <select 
-                      value={lead.status} 
-                      onChange={(e) => updateStatus(lead.id, e.target.value as Lead['status'])}
-                      className={`pill border-none outline-none appearance-none cursor-pointer text-center min-w-[90px] ${
-                        lead.status === 'qualified' ? 'pill-cs' :
-                        lead.status === 'contacted' ? 'pill-sales' :
-                        lead.status === 'lost' ? 'bg-red-50 text-red-500' :
-                        'bg-gray-100 text-bento-muted'
-                      }`}
-                    >
-                      <option value="new">New</option>
-                      <option value="contacted">Contact</option>
-                      <option value="qualified">Qualified</option>
-                      <option value="lost">Lost</option>
-                    </select>
                   </div>
 
                   <div className="pt-4 border-t border-bento-bg flex items-center justify-between text-[11px] font-bold text-bento-muted uppercase tracking-wider">

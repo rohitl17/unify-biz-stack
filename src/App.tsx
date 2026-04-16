@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import Sales from './components/Sales';
@@ -16,8 +16,13 @@ import {
   LayoutDashboard,
   Bell,
   Search,
-  ChevronRight
+  ChevronRight,
+  Clock as ClockIcon,
+  CheckCircle2 as CheckCircleIcon,
+  Plus as PlusIcon
 } from 'lucide-react';
+import { collection, query, onSnapshot, orderBy, limit, where } from 'firebase/firestore';
+import { db } from './lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
 
 type Module = 'overview' | 'sales' | 'support' | 'marketing' | 'success';
@@ -26,6 +31,18 @@ function AppContent() {
   const { user, profile, loading, login, logout } = useAuth();
   const [activeModule, setActiveModule] = useState<Module>('overview');
   const [selectedCustomerName, setSelectedCustomerName] = useState<string | null>(null);
+  const [tasks, setTasks] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, 'tasks'), where('assignedTo', '==', user.uid), limit(10));
+    const unsub = onSnapshot(q, (snap) => {
+      setTasks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, () => {
+       // Silent fail for demo
+    });
+    return () => unsub();
+  }, [user]);
 
   if (loading) {
     return (
@@ -242,22 +259,30 @@ function AppContent() {
                     {/* ACTION ITEMS */}
                     <section className="dashboard-card col-span-1 md:col-span-2 lg:row-span-2">
                        <div className="card-title">Unified Action Queue</div>
-                       <div className="flex-1 flex flex-col justify-center gap-3">
-                         {[
-                           { color: 'bg-accent-sales', text: 'Follow up with Microsoft on Q3 Proposal', customer: 'Microsoft' },
-                           { color: 'bg-accent-support', text: 'Resolve Open Ticket #402 (High Priority)', customer: 'Acme Corp' },
-                           { color: 'bg-accent-cs', text: 'Schedule QBR for HubSpot Account', customer: 'HubSpot' },
-                           { color: 'bg-accent-marketing', text: 'Approve Ad Copy for Summer Launch', customer: 'Acme Corp' },
-                         ].map((item, i) => (
+                       <div className="flex-1 flex flex-col justify-center gap-3 mt-4">
+                         {tasks.map((task) => (
                            <div 
-                            key={i} 
-                            onClick={() => { setSelectedCustomerName(item.customer); setActiveModule('success'); }}
-                            className="flex items-center gap-3 cursor-pointer group/item"
+                            key={task.id} 
+                            onClick={() => { if(task.relatedTo) setSelectedCustomerName(task.relatedTo); setActiveModule('success'); }}
+                            className="flex items-center gap-3 cursor-pointer group/item p-2 hover:bg-gray-50 rounded-xl transition-all"
                            >
-                              <div className={`w-2 h-2 rounded-full ${item.color} shrink-0`} />
-                              <div className="text-[13px] font-medium text-bento-text group-hover/item:font-bold transition-all">{item.text}</div>
+                              <div className={`w-2 h-2 rounded-full shrink-0 ${
+                                task.priority === 'high' ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]' : 
+                                task.priority === 'medium' ? 'bg-amber-400' : 'bg-accent-cs'
+                              }`} />
+                              <div className="flex-1">
+                                <div className="text-[13px] font-bold text-bento-text group-hover/item:text-accent-sales transition-colors">{task.title}</div>
+                                <div className="text-[10px] text-bento-muted font-bold uppercase tracking-widest">{task.category} • {task.relatedTo || 'General'}</div>
+                              </div>
+                              <div className="text-[10px] font-black text-bento-muted">{task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'No date'}</div>
                            </div>
                          ))}
+                         {tasks.length === 0 && (
+                           <div className="flex flex-col items-center justify-center py-8 text-bento-muted bg-bento-bg/30 rounded-2xl border border-dashed border-bento-border">
+                              <CheckCircleIcon className="w-8 h-8 mb-2 opacity-20" />
+                              <p className="text-sm font-bold italic">All caught up!</p>
+                           </div>
+                         )}
                        </div>
                     </section>
 

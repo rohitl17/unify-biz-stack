@@ -22,11 +22,43 @@
         "contactName": { "type": "string" },
         "email": { "type": "string", "format": "email" },
         "status": { "type": "string", "enum": ["new", "contacted", "qualified", "lost"] },
+        "stage": { "type": "string", "enum": ["discovery", "proposal", "negotiation", "closed_won", "closed_lost"] },
+        "leadScore": { "type": "integer" },
         "value": { "type": "number" },
         "ownerId": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["company", "status", "ownerId", "createdAt"]
+    },
+    "Activity": {
+      "title": "Activity",
+      "description": "Interaction log (call, meeting, note)",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["call", "meeting", "note", "email"] },
+        "subject": { "type": "string" },
+        "content": { "type": "string" },
+        "customerId": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "subject", "customerId", "createdBy", "createdAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A specific action item for a user",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "dueDate": { "type": "string", "format": "date-time" },
+        "priority": { "type": "string", "enum": ["low", "medium", "high"] },
+        "status": { "type": "string", "enum": ["todo", "done"] },
+        "assignedTo": { "type": "string" },
+        "relatedTo": { "type": "string" },
+        "category": { "type": "string", "enum": ["sales", "marketing", "support", "success"] }
+      },
+      "required": ["title", "priority", "status", "assignedTo"]
     },
     "Ticket": {
       "title": "Ticket",
@@ -107,6 +139,14 @@
     "/marketingEngagement/{engagementId}": {
       "schema": "MarketingEngagement",
       "description": "Individual customer marketing activities"
+    },
+    "/activities/{activityId}": {
+      "schema": "Activity",
+      "description": "Customer interaction logs"
+    },
+    "/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "User actionable items"
     }
   }
 }
