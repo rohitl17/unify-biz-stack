@@ -36,8 +36,14 @@ interface Ticket {
 export default function Support() {
   const { user } = useAuth();
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
   const [isAdding, setIsAdding] = useState(false);
-  const [newTicket, setNewTicket] = useState({ subject: '', description: '', priority: 'medium' as Ticket['priority'] });
+  const [newTicket, setNewTicket] = useState({ 
+    subject: '', 
+    description: '', 
+    priority: 'medium' as Ticket['priority'],
+    customerId: ''
+  });
 
   useEffect(() => {
     if (!user) return;
@@ -46,21 +52,27 @@ export default function Support() {
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Ticket));
       setTickets(data);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'tickets'));
-    return () => unsub();
+    
+    // Fetch customers for selector
+    const custUnsub = onSnapshot(collection(db, 'customers'), (snap) => {
+      setCustomers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    return () => { unsub(); custUnsub(); };
   }, [user]);
 
   const handleAddTicket = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newTicket.customerId) return;
     try {
       await addDoc(collection(db, 'tickets'), {
         ...newTicket,
         status: 'open',
-        assignedTo: '',
-        customerId: 'CUST-TEMP', // Mock customer for demo
+        assignedTo: user?.displayName || 'Support Team',
         createdAt: new Date().toISOString()
       });
       setIsAdding(false);
-      setNewTicket({ subject: '', description: '', priority: 'medium' });
+      setNewTicket({ subject: '', description: '', priority: 'medium', customerId: '' });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'tickets');
     }
@@ -196,7 +208,22 @@ export default function Support() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-bento-muted uppercase tracking-widest">Priority</label>
+                <label className="text-xs font-bold text-bento-muted uppercase tracking-widest">Customer Account</label>
+                <select 
+                  required
+                  className="w-full px-4 py-3 rounded-xl bg-bento-bg border border-bento-border outline-none appearance-none cursor-pointer font-medium"
+                  value={newTicket.customerId}
+                  onChange={e => setNewTicket({...newTicket, customerId: e.target.value})}
+                >
+                  <option value="">Select a customer...</option>
+                  {customers.map(c => (
+                    <option key={c.id} value={c.name}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-bento-muted uppercase tracking-widest">Priority</label>
                 <select 
                   className="w-full px-4 py-3 rounded-xl bg-bento-bg border border-bento-border outline-none appearance-none cursor-pointer font-medium"
                   value={newTicket.priority}
@@ -218,7 +245,8 @@ export default function Support() {
                   onChange={e => setNewTicket({...newTicket, description: e.target.value})}
                 />
               </div>
-              <div className="flex gap-4 pt-4">
+            </div>
+            <div className="flex gap-4 pt-4">
                 <button type="button" onClick={() => setIsAdding(false)} className="btn-secondary flex-1">Cancel</button>
                 <button type="submit" className="btn-primary flex-1">Submit Ticket</button>
               </div>

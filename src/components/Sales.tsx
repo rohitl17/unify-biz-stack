@@ -43,6 +43,7 @@ interface SalesProps {
 export default function Sales({ onSelectCustomer }: SalesProps) {
   const { user } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [newLead, setNewLead] = useState({ company: '', contactName: '', email: '', value: 0 });
 
@@ -96,6 +97,12 @@ export default function Sales({ onSelectCustomer }: SalesProps) {
     return 'text-red-600 bg-red-50';
   };
 
+  const filteredLeads = leads.filter(lead => 
+    lead.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    lead.contactName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    lead.email.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -136,7 +143,13 @@ export default function Sales({ onSelectCustomer }: SalesProps) {
         <div className="flex items-center justify-between gap-4 px-1">
           <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-bento-border flex-1 max-sm text-sm">
             <Search className="w-4 h-4 text-bento-muted" />
-            <input type="text" placeholder="Search leads..." className="bg-transparent border-none outline-none w-full font-bold text-sm text-bento-text placeholder:text-bento-muted/50" />
+            <input 
+              type="text" 
+              placeholder="Search leads..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-transparent border-none outline-none w-full font-bold text-sm text-bento-text placeholder:text-bento-muted/50" 
+            />
           </div>
           <button className="btn-secondary h-11 px-5">
             <Filter className="w-4 h-4" />
@@ -146,7 +159,7 @@ export default function Sales({ onSelectCustomer }: SalesProps) {
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           <AnimatePresence>
-            {leads.map((lead, i) => (
+            {filteredLeads.map((lead, i) => (
               <motion.div 
                 key={lead.id}
                 layout

@@ -37,6 +37,7 @@ interface CustomerSuccessProps {
 export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessProps) {
   const { user } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [newCust, setNewCust] = useState({ name: '', plan: 'pro' as Customer['plan'], healthScore: 80 });
 
@@ -71,6 +72,11 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
     return 'text-red-500';
   };
 
+  const filteredCustomers = customers.filter(cust => 
+    cust.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    cust.plan.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -78,13 +84,25 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
           <h2 className="text-3xl font-extrabold text-bento-text tracking-tighter">Customer Success</h2>
           <p className="text-bento-muted font-medium">Monitor account health and drive expansions</p>
         </div>
-        <button 
-          onClick={() => setIsAdding(true)}
-          className="btn-primary"
-        >
-          <Plus className="w-4 h-4" />
-          Add Account
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-bento-border text-sm">
+            <Search className="w-4 h-4 text-bento-muted" />
+            <input 
+              type="text" 
+              placeholder="Search accounts..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-transparent border-none outline-none w-48 font-bold text-sm text-bento-text placeholder:text-bento-muted/50" 
+            />
+          </div>
+          <button 
+            onClick={() => setIsAdding(true)}
+            className="btn-primary"
+          >
+            <Plus className="w-4 h-4" />
+            Add Account
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -95,7 +113,7 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
           </h3>
           <AnimatePresence>
             <div className="space-y-3">
-              {customers.map((cust, i) => (
+              {filteredCustomers.map((cust, i) => (
                 <motion.div 
                   key={cust.id}
                   initial={{ opacity: 0, y: 10 }}

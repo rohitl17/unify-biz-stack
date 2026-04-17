@@ -47,6 +47,7 @@ export default function CustomerDetail({ customerName, onBack }: CustomerDetailP
   const [loading, setLoading] = useState(true);
   
   const [newNote, setNewNote] = useState('');
+  const [selectedType, setSelectedType] = useState<'note' | 'call' | 'meeting'>('note');
   const [isLogging, setIsLogging] = useState(false);
 
   useEffect(() => {
@@ -261,23 +262,38 @@ export default function CustomerDetail({ customerName, onBack }: CustomerDetailP
             <motion.div initial={{scale:0.95, opacity:0}} animate={{scale:1, opacity:1}} exit={{scale:0.95, opacity:0}} className="bg-white rounded-[16px] p-6 max-w-md w-full shadow-2xl space-y-4">
               <h3 className="text-xl font-extrabold text-bento-text">Log Interaction</h3>
               <div className="flex gap-2">
-                 {['note', 'call', 'meeting'].map(type => (
-                    <button key={type} onClick={() => handleLogActivity(type as any)} className="flex-1 py-10 rounded-xl bg-bento-bg border border-bento-border hover:bg-white hover:border-bento-text transition-all flex flex-col items-center gap-2 group">
-                       {type === 'note' && <StickyNote className="w-5 h-5 text-bento-muted group-hover:text-accent-support" />}
-                       {type === 'call' && <PhoneCall className="w-5 h-5 text-bento-muted group-hover:text-accent-sales" />}
-                       {type === 'meeting' && <UsersIcon className="w-5 h-5 text-bento-muted group-hover:text-accent-marketing" />}
+                 {(['note', 'call', 'meeting'] as const).map(type => (
+                    <button 
+                      key={type} 
+                      onClick={() => setSelectedType(type)} 
+                      className={`flex-1 py-10 rounded-xl border transition-all flex flex-col items-center gap-2 group ${
+                        selectedType === type ? 'bg-bento-text border-bento-text text-white' : 'bg-bento-bg border-bento-border text-bento-muted hover:bg-white hover:border-bento-text'
+                      }`}
+                    >
+                       {type === 'note' && <StickyNote className={`w-5 h-5 ${selectedType === type ? 'text-accent-support' : 'text-bento-muted group-hover:text-accent-support'}`} />}
+                       {type === 'call' && <PhoneCall className={`w-5 h-5 ${selectedType === type ? 'text-accent-sales' : 'text-bento-muted group-hover:text-accent-sales'}`} />}
+                       {type === 'meeting' && <UsersIcon className={`w-5 h-5 ${selectedType === type ? 'text-accent-marketing' : 'text-bento-muted group-hover:text-accent-marketing'}`} />}
                        <span className="text-[10px] font-black uppercase tracking-widest">{type}</span>
                     </button>
                  ))}
               </div>
               <textarea 
-                placeholder="Enter details about the interaction..."
+                placeholder={`Enter details about the ${selectedType}...`}
                 value={newNote}
                 onChange={e => setNewNote(e.target.value)}
                 className="w-full h-32 p-4 rounded-xl bg-bento-bg border border-bento-border focus:ring-2 focus:ring-bento-text outline-none transition-all font-medium text-sm"
               />
               <div className="flex gap-3">
                  <button onClick={() => setIsLogging(false)} className="btn-secondary flex-1">Cancel</button>
+                 <button 
+                  onClick={() => handleLogActivity(selectedType)} 
+                  disabled={!newNote.trim()}
+                  className={`flex-1 py-3 px-6 rounded-xl font-bold transition-all ${
+                    newNote.trim() ? 'bg-bento-text text-white hover:opacity-90' : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  }`}
+                 >
+                   Save interaction
+                 </button>
               </div>
             </motion.div>
           </div>
