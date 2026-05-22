@@ -28,7 +28,7 @@ import { motion, AnimatePresence } from 'motion/react';
 type Module = 'overview' | 'sales' | 'support' | 'marketing' | 'success';
 
 function AppContent() {
-  const { user, profile, loading, login, logout } = useAuth();
+  const { user, profile, loading, authError, login, logout } = useAuth();
   const [activeModule, setActiveModule] = useState<Module>('overview');
   const [selectedCustomerName, setSelectedCustomerName] = useState<string | null>(null);
   const [tasks, setTasks] = useState<any[]>([]);
@@ -71,13 +71,18 @@ function AppContent() {
               Nexus unifies Sales, Support, Marketing, and Success into a single mission control. Build better customer relationships through data-driven alignment.
             </p>
           </div>
-          <button 
+          <button
             onClick={login}
             className="flex items-center justify-center gap-3 bg-bento-text text-white px-8 py-5 rounded-2xl hover:opacity-90 transition-all text-lg font-bold shadow-xl w-full md:w-fit"
           >
             Get Started with Google
             <ChevronRight className="w-5 h-5" />
           </button>
+          {authError && (
+            <p className="text-red-500 text-sm font-medium bg-red-50 border border-red-200 rounded-xl px-4 py-3 max-w-xl break-words">
+              {authError}
+            </p>
+          )}
         </div>
         <div className="flex-1 bg-bento-bg p-8 hidden md:flex items-center justify-center relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-accent-sales/10 to-accent-marketing/10" />
