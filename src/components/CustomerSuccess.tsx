@@ -43,6 +43,9 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
   const [newCust, setNewCust] = useState({ name: '', plan: 'pro' as Customer['plan'], healthScore: 80 });
   const [editingScoreFor, setEditingScoreFor] = useState<string | null>(null);
   const [editingScoreValue, setEditingScoreValue] = useState('');
+  const [editingPlanFor, setEditingPlanFor] = useState<string | null>(null);
+  const [editingRenewalFor, setEditingRenewalFor] = useState<string | null>(null);
+  const [editingRenewalValue, setEditingRenewalValue] = useState('');
   const [creatingTaskFor, setCreatingTaskFor] = useState<Customer | null>(null);
   const [newTask, setNewTask] = useState({ title: '', priority: 'medium' as 'low' | 'medium' | 'high', dueDate: '' });
 
@@ -80,6 +83,25 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
     setEditingScoreFor(null);
   };
 
+  const savePlan = async (custId: string, newPlan: Customer['plan']) => {
+    try {
+      await updateDoc(doc(db, 'customers', custId), { plan: newPlan });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `customers/${custId}`);
+    }
+    setEditingPlanFor(null);
+  };
+
+  const saveRenewalDate = async (custId: string) => {
+    if (!editingRenewalValue) { setEditingRenewalFor(null); return; }
+    try {
+      await updateDoc(doc(db, 'customers', custId), { renewalDate: new Date(editingRenewalValue).toISOString() });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `customers/${custId}`);
+    }
+    setEditingRenewalFor(null);
+  };
+
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!creatingTaskFor) return;
@@ -108,10 +130,12 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
     new Date(a.renewalDate).getTime() - new Date(b.renewalDate).getTime()
   );
 
-  const filteredCustomers = customers.filter(cust =>
-    cust.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    cust.plan.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredCustomers = customers
+    .filter(cust =>
+      cust.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      cust.plan.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    .sort((a, b) => b.healthScore - a.healthScore);
 
   return (
     <div className="space-y-6">
@@ -162,7 +186,28 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
                     </div>
                     <div className="min-w-0">
                       <h4 className="font-extrabold text-bento-text text-lg tracking-tight leading-tight truncate">{cust.name}</h4>
-                      <p className="text-[10px] text-bento-muted font-extrabold uppercase tracking-widest leading-none mt-1">{cust.plan} Plan</p>
+                      {editingPlanFor === cust.id ? (
+                        <select
+                          autoFocus
+                          value={cust.plan}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => savePlan(cust.id, e.target.value as Customer['plan'])}
+                          onBlur={() => setEditingPlanFor(null)}
+                          className="text-[10px] font-extrabold uppercase tracking-widest border-b border-accent-cs outline-none bg-transparent cursor-pointer mt-1"
+                        >
+                          <option value="basic">Basic</option>
+                          <option value="pro">Pro</option>
+                          <option value="enterprise">Enterprise</option>
+                        </select>
+                      ) : (
+                        <p
+                          className="text-[10px] text-bento-muted font-extrabold uppercase tracking-widest leading-none mt-1 cursor-pointer hover:underline underline-offset-2"
+                          title="Click to edit plan"
+                          onClick={e => { e.stopPropagation(); setEditingPlanFor(cust.id); }}
+                        >
+                          {cust.plan} Plan
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -226,9 +271,25 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
                   <div key={cust.id} className="p-5 flex items-center justify-between hover:bg-gray-50/50 transition-colors">
                     <div>
                       <p className="font-bold text-bento-text tracking-tight">{cust.name}</p>
-                      <p className={`text-[11px] font-bold uppercase tracking-wider ${daysUntil <= 30 ? 'text-red-500' : daysUntil <= 90 ? 'text-accent-support' : 'text-bento-muted'}`}>
-                        {daysUntil > 0 ? `${daysUntil}d — ${new Date(cust.renewalDate).toLocaleDateString()}` : 'Expired'}
-                      </p>
+                      {editingRenewalFor === cust.id ? (
+                        <input
+                          autoFocus
+                          type="date"
+                          value={editingRenewalValue}
+                          onChange={e => setEditingRenewalValue(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') saveRenewalDate(cust.id); if (e.key === 'Escape') setEditingRenewalFor(null); }}
+                          onBlur={() => saveRenewalDate(cust.id)}
+                          className="text-[11px] font-bold border-b border-accent-sales outline-none bg-transparent cursor-pointer mt-0.5"
+                        />
+                      ) : (
+                        <p
+                          className={`text-[11px] font-bold uppercase tracking-wider cursor-pointer hover:underline underline-offset-2 ${daysUntil <= 30 ? 'text-red-500' : daysUntil <= 90 ? 'text-accent-support' : 'text-bento-muted'}`}
+                          title="Click to edit renewal date"
+                          onClick={() => { setEditingRenewalFor(cust.id); setEditingRenewalValue(new Date(cust.renewalDate).toISOString().split('T')[0]); }}
+                        >
+                          {daysUntil > 0 ? `${daysUntil}d — ${new Date(cust.renewalDate).toLocaleDateString()}` : 'Expired'}
+                        </p>
+                      )}
                     </div>
                     <button
                       onClick={() => onSelectCustomer(cust.name)}

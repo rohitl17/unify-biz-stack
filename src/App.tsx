@@ -399,10 +399,10 @@ function AppContent() {
                   </div>
                 )}
                 {activeModule === 'sales' && !selectedCustomerName && (
-                  <Sales onSelectCustomer={(name) => { setSelectedCustomerName(name); }} />
+                  <Sales onSelectCustomer={(name) => { setSelectedCustomerName(name); }} campaigns={campaigns} />
                 )}
                 {activeModule === 'support' && !selectedCustomerName && <Support />}
-                {activeModule === 'marketing' && !selectedCustomerName && <Marketing />}
+                {activeModule === 'marketing' && !selectedCustomerName && <Marketing leads={leads} />}
                 {activeModule === 'success' && !selectedCustomerName && (
                   <CustomerSuccess onSelectCustomer={(name) => { setSelectedCustomerName(name); }} />
                 )}

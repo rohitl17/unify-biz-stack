@@ -4,14 +4,13 @@ import {
   query,
   onSnapshot,
   addDoc,
+  updateDoc,
+  doc,
   orderBy,
-  getDocs,
-  where,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../hooks/useAuth';
 import {
-  Megaphone,
   Plus,
   BarChart3,
   Mail,
@@ -19,7 +18,6 @@ import {
   Target,
   Rocket,
   X,
-  TrendingUp,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -29,7 +27,6 @@ interface Campaign {
   type: 'email' | 'social' | 'webinar' | 'ads';
   status: 'planned' | 'active' | 'completed' | 'paused';
   budget: number;
-  leadsGenerated: number;
   startDate: string;
 }
 
@@ -41,13 +38,15 @@ interface CampaignAnalytics {
   conversionRate: number;
 }
 
-export default function Marketing() {
+interface MarketingProps {
+  leads: any[];
+}
+
+export default function Marketing({ leads: allLeads }: MarketingProps) {
   const { user } = useAuth();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [allLeads, setAllLeads] = useState<any[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [analytics, setAnalytics] = useState<CampaignAnalytics | null>(null);
-  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   const [newCamp, setNewCamp] = useState({ name: '', type: 'email' as Campaign['type'], budget: 1000 });
 
   useEffect(() => {
@@ -57,27 +56,23 @@ export default function Marketing() {
       (snap) => setCampaigns(snap.docs.map(d => ({ id: d.id, ...d.data() } as Campaign))),
       (error) => handleFirestoreError(error, OperationType.LIST, 'campaigns')
     );
-    const leadUnsub = onSnapshot(collection(db, 'leads'), (snap) => {
-      setAllLeads(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, () => {});
-    return () => { unsub(); leadUnsub(); };
+    return () => unsub();
   }, [user]);
 
-  const openAnalytics = async (camp: Campaign) => {
-    setLoadingAnalytics(true);
-    const leadsAfterStart = allLeads.filter(l => l.createdAt >= camp.startDate);
-    const totalValue = leadsAfterStart.reduce((sum, l) => sum + (Number(l.value) || 0), 0);
+  const openAnalytics = (camp: Campaign) => {
+    // Use campaignId for accurate attribution
+    const attributedLeads = allLeads.filter(l => l.campaignId === camp.id);
+    const totalValue = attributedLeads.reduce((sum, l) => sum + (Number(l.value) || 0), 0);
     const roi = camp.budget > 0 ? totalValue / camp.budget : 0;
-    const wonLeads = leadsAfterStart.filter(l => l.stage === 'closed_won').length;
-    const conversionRate = leadsAfterStart.length > 0 ? Math.round((wonLeads / leadsAfterStart.length) * 100) : 0;
+    const wonLeads = attributedLeads.filter(l => l.stage === 'closed_won').length;
+    const conversionRate = attributedLeads.length > 0 ? Math.round((wonLeads / attributedLeads.length) * 100) : 0;
     setAnalytics({
       campaign: camp,
-      leadsCount: leadsAfterStart.length,
+      leadsCount: attributedLeads.length,
       totalLeadValue: totalValue,
       roi,
       conversionRate,
     });
-    setLoadingAnalytics(false);
   };
 
   const handleAddCampaign = async (e: React.FormEvent) => {
@@ -86,13 +81,20 @@ export default function Marketing() {
       await addDoc(collection(db, 'campaigns'), {
         ...newCamp,
         status: 'active',
-        leadsGenerated: 0,
         startDate: new Date().toISOString(),
       });
       setIsAdding(false);
       setNewCamp({ name: '', type: 'email', budget: 1000 });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'campaigns');
+    }
+  };
+
+  const updateCampaignStatus = async (campId: string, newStatus: Campaign['status']) => {
+    try {
+      await updateDoc(doc(db, 'campaigns', campId), { status: newStatus });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `campaigns/${campId}`);
     }
   };
 
@@ -154,7 +156,16 @@ export default function Marketing() {
                   <h3 className="text-xl font-extrabold text-bento-text tracking-tighter uppercase">{camp.name}</h3>
                   <div className="flex items-center gap-2 mt-2">
                     <span className="pill pill-marketing px-2 py-0.5 uppercase">{camp.type}</span>
-                    <span className="pill bg-gray-100 text-bento-muted px-2 py-0.5 uppercase">{camp.status}</span>
+                    <select
+                      value={camp.status}
+                      onChange={e => updateCampaignStatus(camp.id, e.target.value as Campaign['status'])}
+                      className="pill bg-gray-100 text-bento-muted px-2 py-0.5 uppercase text-[10px] font-extrabold tracking-widest border-none outline-none cursor-pointer rounded-full appearance-none"
+                    >
+                      <option value="planned">Planned</option>
+                      <option value="active">Active</option>
+                      <option value="paused">Paused</option>
+                      <option value="completed">Completed</option>
+                    </select>
                   </div>
                 </div>
                 <div className="text-right">

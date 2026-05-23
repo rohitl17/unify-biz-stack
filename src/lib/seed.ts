@@ -39,12 +39,31 @@ export async function runSeed(uid: string): Promise<string> {
     successManagerId: uid,
   }));
 
+  const campaignDocs = [
+    'Q2 Email Nurture Sequence', 'Spring Webinar: Scale Your CRM',
+    'LinkedIn Thought Leadership Ads', 'Re-engagement: Churned Leads',
+    'Product Launch Announcement', 'Customer Success Stories Series',
+    'Google Ads — SMB Segment', 'Partner Co-marketing Campaign',
+  ].map(name => ({
+    name,
+    type: pick(['email', 'social', 'webinar', 'ads'] as const),
+    status: pick(['active', 'active', 'planned', 'completed'] as const),
+    budget: pick([1000, 2500, 5000, 8000, 12000, 20000]),
+    startDate: daysAgo(rand(5, 60)),
+  }));
+
+  // Seed campaigns first so we can capture their IDs for lead attribution
+  const campaignRefs = await Promise.all(campaignDocs.map(d => addDoc(collection(db, 'campaigns'), d)));
+  const campaignIds = campaignRefs.map(r => r.id);
+
   const stages = ['discovery', 'proposal', 'negotiation', 'closed_won', 'closed_lost'] as const;
   const statuses = ['new', 'contacted', 'qualified', 'lost'] as const;
 
   const leads = COMPANIES.map((company, i) => {
     const stage = pick([...stages]);
     const status = stage === 'closed_won' ? 'qualified' : stage === 'closed_lost' ? 'lost' : pick([...statuses]);
+    // ~70% of leads are attributed to a campaign
+    const attributed = Math.random() > 0.3;
     return {
       company,
       contactName: CONTACTS[i],
@@ -55,6 +74,7 @@ export async function runSeed(uid: string): Promise<string> {
       leadScore: 0,
       ownerId: uid,
       createdAt: daysAgo(rand(1, 90)),
+      ...(attributed ? { campaignId: pick(campaignIds) } : {}),
     };
   });
 
@@ -85,20 +105,6 @@ export async function runSeed(uid: string): Promise<string> {
     customerId: company,
     assignedTo: pick(['Support Team', 'Alex Rivera', 'Jordan Smith']),
     createdAt: daysAgo(rand(0, 14)),
-  }));
-
-  const campaigns = [
-    'Q2 Email Nurture Sequence', 'Spring Webinar: Scale Your CRM',
-    'LinkedIn Thought Leadership Ads', 'Re-engagement: Churned Leads',
-    'Product Launch Announcement', 'Customer Success Stories Series',
-    'Google Ads — SMB Segment', 'Partner Co-marketing Campaign',
-  ].map(name => ({
-    name,
-    type: pick(['email', 'social', 'webinar', 'ads'] as const),
-    status: pick(['active', 'active', 'planned', 'completed'] as const),
-    budget: pick([1000, 2500, 5000, 8000, 12000, 20000]),
-    leadsGenerated: rand(0, 40),
-    startDate: daysAgo(rand(5, 60)),
   }));
 
   const activityContents = [
@@ -161,10 +167,10 @@ export async function runSeed(uid: string): Promise<string> {
   await seedCol('customers', customers);
   await seedCol('leads', leads);
   await seedCol('tickets', tickets);
-  await seedCol('campaigns', campaigns);
+  // campaigns already seeded above (needed IDs for lead attribution)
   await seedCol('activities', activities);
   await seedCol('tasks', tasks);
   await seedCol('marketingEngagement', engagements);
 
-  return `Seeded: ${customers.length} customers, ${leads.length} leads, ${tickets.length} tickets, ${campaigns.length} campaigns, ${activities.length} activities, ${tasks.length} tasks, ${engagements.length} engagements`;
+  return `Seeded: ${customers.length} customers, ${leads.length} leads, ${tickets.length} tickets, ${campaignDocs.length} campaigns, ${activities.length} activities, ${tasks.length} tasks, ${engagements.length} engagements`;
 }

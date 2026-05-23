@@ -35,10 +35,18 @@ interface Lead {
   value: number;
   ownerId: string;
   createdAt: any;
+  campaignId?: string;
+}
+
+interface Campaign {
+  id: string;
+  name: string;
+  status: 'planned' | 'active' | 'completed' | 'paused';
 }
 
 interface SalesProps {
   onSelectCustomer: (name: string) => void;
+  campaigns: Campaign[];
 }
 
 function computeLeadScore(lead: Partial<Lead>): number {
@@ -54,7 +62,7 @@ function computeLeadScore(lead: Partial<Lead>): number {
   return Math.min(100, stage + status + valuePoints);
 }
 
-export default function Sales({ onSelectCustomer }: SalesProps) {
+export default function Sales({ onSelectCustomer, campaigns }: SalesProps) {
   const { user } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -62,7 +70,7 @@ export default function Sales({ onSelectCustomer }: SalesProps) {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterStage, setFilterStage] = useState('');
   const [isAdding, setIsAdding] = useState(false);
-  const [newLead, setNewLead] = useState({ company: '', contactName: '', email: '', value: 0 });
+  const [newLead, setNewLead] = useState({ company: '', contactName: '', email: '', value: 0, campaignId: '' });
   const [creatingTaskFor, setCreatingTaskFor] = useState<Lead | null>(null);
   const [newTask, setNewTask] = useState({ title: '', priority: 'medium' as 'low' | 'medium' | 'high', dueDate: '' });
 
@@ -78,15 +86,17 @@ export default function Sales({ onSelectCustomer }: SalesProps) {
   const handleAddLead = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const draft = { ...newLead, status: 'new' as const, stage: 'discovery' as const };
+      const { campaignId, ...rest } = newLead;
+      const draft = { ...rest, status: 'new' as const, stage: 'discovery' as const };
       await addDoc(collection(db, 'leads'), {
         ...draft,
         leadScore: computeLeadScore(draft),
         ownerId: user?.uid,
         createdAt: new Date().toISOString(),
+        ...(campaignId ? { campaignId } : {}),
       });
       setIsAdding(false);
-      setNewLead({ company: '', contactName: '', email: '', value: 0 });
+      setNewLead({ company: '', contactName: '', email: '', value: 0, campaignId: '' });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'leads');
     }
@@ -370,6 +380,21 @@ export default function Sales({ onSelectCustomer }: SalesProps) {
                 <label className="text-xs font-bold text-bento-muted uppercase tracking-widest">Email Address</label>
                 <input type="email" required className="w-full px-4 py-3 rounded-xl bg-bento-bg border border-bento-border focus:ring-2 focus:ring-accent-sales outline-none transition-all font-medium" value={newLead.email} onChange={e => setNewLead({ ...newLead, email: e.target.value })} />
               </div>
+              {campaigns.filter(c => c.status === 'active').length > 0 && (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-bento-muted uppercase tracking-widest">Source Campaign <span className="normal-case font-medium">(optional)</span></label>
+                  <select
+                    className="w-full px-4 py-3 rounded-xl bg-bento-bg border border-bento-border outline-none appearance-none cursor-pointer font-medium"
+                    value={newLead.campaignId}
+                    onChange={e => setNewLead({ ...newLead, campaignId: e.target.value })}
+                  >
+                    <option value="">— No attribution —</option>
+                    {campaigns.filter(c => c.status === 'active').map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="flex gap-4 pt-4">
                 <button type="button" onClick={() => setIsAdding(false)} className="btn-secondary flex-1">Cancel</button>
                 <button type="submit" className="btn-primary flex-1">Save Lead</button>
