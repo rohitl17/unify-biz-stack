@@ -1,14 +1,54 @@
-# Nexus (Prototype)
+# Nexus — Unified CRM for SMBs
 
-## Overview & Vision
+> One tool. Every customer interaction. No sync required.
 
-**Nexus** is a functional prototype of a **Unified CRM** designed specifically for SMBs. It delivers a "Single-Source-of-Truth" architecture where Sales, Customer Success, Marketing, and Support share a live Firestore backend and a unified customer profile view.
+<video src="assets/demo.mp4" controls width="100%"></video>
 
-### Core Value Pillars
+---
 
-- **Unified Context**: Every interaction — marketing signals, support tickets, sales activities — surfaces in a single customer profile accessible from any module.
-- **Bento Grid Interface**: A card-based layout manages information density, making complex customer data scannable without overwhelming the user.
-- **Real-Time Data**: All modules use Firestore `onSnapshot` listeners. Updates in one module appear instantly across the rest of the app.
+## The Problem
+
+A typical 10-person SMB runs customer operations across four separate tools — Pipedrive for sales, Mailchimp for marketing, Freshdesk for support, and spreadsheets for account health. Each tool works in isolation.
+
+The result: your sales rep calls a prospect without knowing they filed an angry support ticket two days ago. Your customer success manager sends a renewal pitch to an account marketing flagged as disengaged. Your support agent resolves a critical ticket without knowing the account is worth $85K and up for renewal next month.
+
+**SMBs are forced to maintain four different "truths" about the same customer.**
+
+---
+
+## What Nexus Does Differently
+
+Nexus is built on a single backend. Every module — Sales, Marketing, Support, Customer Success — reads from and writes to the same dataset. There is no sync, no webhook, no nightly export.
+
+- When a support ticket is filed, the sales rep sees it in the customer profile
+- When a lead closes, a customer account is created automatically
+- When marketing engagement spikes, it surfaces in the health view
+- Every task from every module lands in one Action Queue, assigned to the right person
+
+**One record per customer. Accessible from every role. Updated in real time.**
+
+---
+
+## Who It's For
+
+**The 5–50 person company** that has outgrown spreadsheets but isn't ready to hire a RevOps team to configure Salesforce.
+
+- A **SaaS startup** with a founder-led sales motion that needs support and marketing data in the same view
+- A **services business** where renewal timing and account health drive most of the revenue
+- A **B2B company** where the same 50 customers interact with sales, support, and marketing — and the left hand needs to know what the right hand is doing
+
+---
+
+## Core Modules
+
+| Module | What it does |
+|---|---|
+| **Overview** | Live dashboard: pipeline value, health scores, active campaigns, engagement delta, live tickets, action queue — all real Firestore data |
+| **Sales Pipeline** | Lead management, deterministic lead scoring, filter panel, task creation, auto-creates customer account on `closed_won` |
+| **Marketing Hub** | Campaign management with real analytics — leads attributed since launch, computed ROI, win rate from actual deal values |
+| **Support Inbox** | Ticket management with a chat-style activity thread per ticket and inline reply |
+| **Customer Success** | Account health monitoring, inline score editing, renewal countdown, task creation |
+| **Customer Detail** | 360° profile: activities, open tickets, deals, marketing engagement, data-driven account roadmap |
 
 ---
 
@@ -20,12 +60,11 @@
 
 ### Local Setup
 
-1. Clone the repo
-2. Install dependencies:
+1. Clone the repo and install dependencies:
    ```bash
    npm install
    ```
-3. Create `.env.local` in the project root (copy from `.env.example`) and fill in your Firebase credentials:
+2. Copy `.env.example` to `.env.local` and fill in your Firebase credentials:
    ```
    VITE_FIREBASE_API_KEY=...
    VITE_FIREBASE_AUTH_DOMAIN=...
@@ -35,49 +74,34 @@
    VITE_FIREBASE_APP_ID=...
    VITE_FIREBASE_DATABASE_ID=(default)
    ```
-4. Add `localhost` to your Firebase project's authorized domains (Authentication → Settings → Authorized domains)
-5. Start the dev server:
+3. Add `localhost` to Firebase's authorized domains (Authentication → Settings → Authorized domains)
+4. Start the dev server:
    ```bash
    npm run dev
    ```
 
-> **Note**: Never commit `.env.local` or any file containing Firebase credentials. The `.gitignore` already covers this.
+> Never commit `.env.local`. The `.gitignore` already covers this.
 
 ### Seeding Demo Data
 
-In development, a **Seed Demo Data** button appears at the bottom of the sidebar. Clicking it clears all collections and populates 7 Firestore collections with 10 companies of realistic data (customers, leads, tickets, campaigns, activities, tasks, marketing engagement). Requires admin-level Firestore delete permissions — your account is pre-configured as admin in `firestore.rules`.
-
----
-
-## Core Modules
-
-| Module | What it does |
-|---|---|
-| **Overview** | Live dashboard: pipeline value, health scores, active campaigns, engagement delta, live tickets, action queue — all from real Firestore data |
-| **Sales Pipeline** | Lead management with stage/status tracking, deterministic lead scoring, filter panel, task creation, and automatic customer creation on `closed_won` |
-| **Marketing Hub** | Campaign management with real analytics (leads generated since launch, computed ROI, win rate) |
-| **Support Inbox** | Ticket management with a chat-style activity thread per ticket and per-ticket task creation |
-| **Customer Success** | Account health monitoring with inline score editing, renewal countdown, and task creation |
-| **Customer Detail** | 360° profile aggregating activities, open tickets, deals, marketing engagement, and a data-driven CS roadmap |
+In development, a **Seed Demo Data** button appears at the bottom of the sidebar. It clears all collections and repopulates 7 Firestore collections with realistic demo data across 10 companies.
 
 ---
 
 ## Tech Stack
 
-- **React 19 + TypeScript** — functional components and hooks throughout
-- **Vite** — dev server and bundler
-- **Tailwind CSS 4** — custom Bento theme with accent color variables (`accent-sales`, `accent-cs`, `accent-support`, `accent-marketing`)
-- **Framer Motion** (`motion/react`) — page transitions and modal animations
-- **Firebase Firestore** — real-time NoSQL backend via `onSnapshot`
-- **Firebase Auth** — Google OAuth via `signInWithPopup`
-- **Lucide React** — icon set
+- **React 19 + TypeScript** + **Vite**
+- **Tailwind CSS 4** — custom Bento Grid theme
+- **Framer Motion** — transitions and modal animations
+- **Firebase Firestore** — real-time backend via `onSnapshot`
+- **Firebase Auth** — Google OAuth
 
 ---
 
-## Project Status
+## Further Reading
 
-**Current State**: High-fidelity functional prototype — all six dashboard cards and all module interactions pull from live Firestore data.
-
-**Known architectural debt**: All cross-module joins use `customerName` as a string key. See [docs/DATA_MODEL.md](./docs/DATA_MODEL.md) for the UUID migration path.
-
-**Next Steps**: See [docs/PRODUCTION_ROADMAP.md](./docs/PRODUCTION_ROADMAP.md).
+- [Product Brief & Competitor Positioning](./docs/PRODUCT.md)
+- [Architecture](./docs/ARCHITECTURE.md)
+- [Data Model](./docs/DATA_MODEL.md)
+- [Production Roadmap](./docs/PRODUCTION_ROADMAP.md)
+- [Security](./docs/SECURITY.md)
