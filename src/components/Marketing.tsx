@@ -1,23 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  collection, 
-  query, 
-  onSnapshot, 
-  addDoc, 
-  updateDoc, 
-  doc, 
-  orderBy
+import {
+  collection,
+  query,
+  onSnapshot,
+  addDoc,
+  orderBy,
+  getDocs,
+  where,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../hooks/useAuth';
-import { 
-  Megaphone, 
-  Plus, 
-  BarChart3, 
-  Mail, 
-  Users, 
+import {
+  Megaphone,
+  Plus,
+  BarChart3,
+  Mail,
+  Users,
   Target,
-  Rocket
+  Rocket,
+  X,
+  TrendingUp,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -31,21 +33,52 @@ interface Campaign {
   startDate: string;
 }
 
+interface CampaignAnalytics {
+  campaign: Campaign;
+  leadsCount: number;
+  totalLeadValue: number;
+  roi: number;
+  conversionRate: number;
+}
+
 export default function Marketing() {
   const { user } = useAuth();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [allLeads, setAllLeads] = useState<any[]>([]);
   const [isAdding, setIsAdding] = useState(false);
+  const [analytics, setAnalytics] = useState<CampaignAnalytics | null>(null);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   const [newCamp, setNewCamp] = useState({ name: '', type: 'email' as Campaign['type'], budget: 1000 });
 
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, 'campaigns'), orderBy('startDate', 'desc'));
-    const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Campaign));
-      setCampaigns(data);
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'campaigns'));
-    return () => unsub();
+    const unsub = onSnapshot(
+      query(collection(db, 'campaigns'), orderBy('startDate', 'desc')),
+      (snap) => setCampaigns(snap.docs.map(d => ({ id: d.id, ...d.data() } as Campaign))),
+      (error) => handleFirestoreError(error, OperationType.LIST, 'campaigns')
+    );
+    const leadUnsub = onSnapshot(collection(db, 'leads'), (snap) => {
+      setAllLeads(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => {});
+    return () => { unsub(); leadUnsub(); };
   }, [user]);
+
+  const openAnalytics = async (camp: Campaign) => {
+    setLoadingAnalytics(true);
+    const leadsAfterStart = allLeads.filter(l => l.createdAt >= camp.startDate);
+    const totalValue = leadsAfterStart.reduce((sum, l) => sum + (Number(l.value) || 0), 0);
+    const roi = camp.budget > 0 ? totalValue / camp.budget : 0;
+    const wonLeads = leadsAfterStart.filter(l => l.stage === 'closed_won').length;
+    const conversionRate = leadsAfterStart.length > 0 ? Math.round((wonLeads / leadsAfterStart.length) * 100) : 0;
+    setAnalytics({
+      campaign: camp,
+      leadsCount: leadsAfterStart.length,
+      totalLeadValue: totalValue,
+      roi,
+      conversionRate,
+    });
+    setLoadingAnalytics(false);
+  };
 
   const handleAddCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,7 +87,7 @@ export default function Marketing() {
         ...newCamp,
         status: 'active',
         leadsGenerated: 0,
-        startDate: new Date().toISOString()
+        startDate: new Date().toISOString(),
       });
       setIsAdding(false);
       setNewCamp({ name: '', type: 'email', budget: 1000 });
@@ -63,6 +96,14 @@ export default function Marketing() {
     }
   };
 
+  // Real computed stats
+  const totalLeadsGenerated = allLeads.length;
+  const totalBudget = campaigns.reduce((sum, c) => sum + (c.budget || 0), 0);
+  const totalValue = allLeads.reduce((sum, l) => sum + (Number(l.value) || 0), 0);
+  const realRoi = totalBudget > 0 ? (totalValue / totalBudget).toFixed(1) : '—';
+  const wonLeads = allLeads.filter(l => l.stage === 'closed_won').length;
+  const realConversion = totalLeadsGenerated > 0 ? Math.round((wonLeads / totalLeadsGenerated) * 100) : 0;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -70,12 +111,8 @@ export default function Marketing() {
           <h2 className="text-3xl font-extrabold text-bento-text tracking-tighter">Marketing Hub</h2>
           <p className="text-bento-muted font-medium">Launch campaigns and track acquisition performance</p>
         </div>
-        <button 
-          onClick={() => setIsAdding(true)}
-          className="btn-primary"
-        >
-          <Plus className="w-4 h-4" />
-          Create Campaign
+        <button onClick={() => setIsAdding(true)} className="btn-primary">
+          <Plus className="w-4 h-4" /> Create Campaign
         </button>
       </div>
 
@@ -88,24 +125,24 @@ export default function Marketing() {
         <div className="dashboard-card bg-[#fef3c7] text-accent-support">
           <Users className="w-8 h-8 mb-4 opacity-50" />
           <h4 className="text-accent-support/60 text-[10px] font-extrabold uppercase tracking-widest mb-1">Total Leads</h4>
-          <p className="text-3xl font-black">{campaigns.reduce((acc, c) => acc + (c.leadsGenerated || 0), 0)}</p>
+          <p className="text-3xl font-black">{totalLeadsGenerated}</p>
         </div>
         <div className="dashboard-card bg-bento-text text-white">
           <BarChart3 className="w-8 h-8 mb-4 opacity-50" />
-          <h4 className="text-white/40 text-[10px] font-extrabold uppercase tracking-widest mb-1">Avg ROI</h4>
-          <p className="text-3xl font-black">2.4x</p>
+          <h4 className="text-white/40 text-[10px] font-extrabold uppercase tracking-widest mb-1">Pipeline ROI</h4>
+          <p className="text-3xl font-black">{realRoi}x</p>
         </div>
         <div className="dashboard-card bg-[#dcfce7] text-accent-cs">
           <Target className="w-8 h-8 mb-4 opacity-50" />
-          <h4 className="text-accent-cs/60 text-[10px] font-extrabold uppercase tracking-widest mb-1">Conversion</h4>
-          <p className="text-3xl font-black">12%</p>
+          <h4 className="text-accent-cs/60 text-[10px] font-extrabold uppercase tracking-widest mb-1">Win Rate</h4>
+          <p className="text-3xl font-black">{realConversion}%</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <AnimatePresence>
           {campaigns.map((camp, i) => (
-            <motion.div 
+            <motion.div
               key={camp.id}
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -128,42 +165,36 @@ export default function Marketing() {
               <div className="pt-5 border-t border-bento-bg flex items-center justify-between text-sm">
                 <div className="flex items-center gap-2.5">
                   <Rocket className="w-4 h-4 text-accent-marketing" />
-                  <span className="font-extrabold text-bento-text uppercase tracking-tight text-[11px]">{camp.leadsGenerated} Leads Generated</span>
+                  <span className="font-extrabold text-bento-text uppercase tracking-tight text-[11px]">
+                    {allLeads.filter(l => l.createdAt >= camp.startDate).length} Leads Since Launch
+                  </span>
                 </div>
-                <button className="text-[11px] text-accent-marketing font-extrabold uppercase tracking-widest hover:underline underline-offset-4">Analytics →</button>
+                <button
+                  onClick={() => openAnalytics(camp)}
+                  className="text-[11px] text-accent-marketing font-extrabold uppercase tracking-widest hover:underline underline-offset-4"
+                >
+                  Analytics →
+                </button>
               </div>
             </motion.div>
           ))}
         </AnimatePresence>
       </div>
 
+      {/* Create Campaign Modal */}
       {isAdding && (
         <div className="fixed inset-0 bg-bento-text/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <motion.div 
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-[16px] p-8 max-w-lg w-full shadow-2xl border border-bento-border space-y-6"
-          >
+          <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-[16px] p-8 max-w-lg w-full shadow-2xl border border-bento-border space-y-6">
             <h3 className="text-2xl font-extrabold text-bento-text tracking-tighter">Launch New Campaign</h3>
             <form onSubmit={handleAddCampaign} className="space-y-4">
               <div className="space-y-2">
                 <label className="text-xs font-bold text-bento-muted uppercase tracking-widest">Campaign Name</label>
-                <input 
-                  type="text" 
-                  required
-                  className="w-full px-4 py-3 rounded-xl bg-bento-bg border border-bento-border focus:ring-2 focus:ring-accent-marketing outline-none transition-all font-medium"
-                  value={newCamp.name}
-                  onChange={e => setNewCamp({...newCamp, name: e.target.value})}
-                />
+                <input type="text" required className="w-full px-4 py-3 rounded-xl bg-bento-bg border border-bento-border focus:ring-2 focus:ring-accent-marketing outline-none transition-all font-medium" value={newCamp.name} onChange={e => setNewCamp({ ...newCamp, name: e.target.value })} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-bento-muted uppercase tracking-widest">Channel</label>
-                  <select 
-                    className="w-full px-4 py-3 rounded-xl bg-bento-bg border border-bento-border outline-none appearance-none cursor-pointer font-medium"
-                    value={newCamp.type}
-                    onChange={e => setNewCamp({...newCamp, type: e.target.value as Campaign['type']})}
-                  >
+                  <select className="w-full px-4 py-3 rounded-xl bg-bento-bg border border-bento-border outline-none appearance-none cursor-pointer font-medium" value={newCamp.type} onChange={e => setNewCamp({ ...newCamp, type: e.target.value as Campaign['type'] })}>
                     <option value="email">Email</option>
                     <option value="social">Social Media</option>
                     <option value="webinar">Webinar</option>
@@ -172,13 +203,7 @@ export default function Marketing() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-bento-muted uppercase tracking-widest">Budget ($)</label>
-                  <input 
-                    type="number" 
-                    required
-                    className="w-full px-4 py-3 rounded-xl bg-bento-bg border border-bento-border focus:ring-2 focus:ring-accent-marketing outline-none transition-all font-medium"
-                    value={newCamp.budget}
-                    onChange={e => setNewCamp({...newCamp, budget: Number(e.target.value)})}
-                  />
+                  <input type="number" required className="w-full px-4 py-3 rounded-xl bg-bento-bg border border-bento-border focus:ring-2 focus:ring-accent-marketing outline-none transition-all font-medium" value={newCamp.budget} onChange={e => setNewCamp({ ...newCamp, budget: Number(e.target.value) })} />
                 </div>
               </div>
               <div className="flex gap-4 pt-4">
@@ -189,6 +214,60 @@ export default function Marketing() {
           </motion.div>
         </div>
       )}
+
+      {/* Analytics Modal */}
+      <AnimatePresence>
+        {analytics && (
+          <div className="fixed inset-0 bg-bento-text/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white rounded-[16px] p-8 max-w-md w-full shadow-2xl border border-bento-border space-y-6">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-2xl font-extrabold text-bento-text tracking-tighter">{analytics.campaign.name}</h3>
+                  <p className="text-[10px] text-bento-muted font-bold uppercase tracking-widest mt-1">Campaign Analytics</p>
+                </div>
+                <button onClick={() => setAnalytics(null)} className="p-2 hover:bg-bento-bg rounded-xl text-bento-muted">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-bento-bg rounded-2xl p-4">
+                  <p className="text-[10px] font-black text-bento-muted uppercase tracking-widest">Leads Since Launch</p>
+                  <p className="text-3xl font-black text-bento-text mt-1">{analytics.leadsCount}</p>
+                </div>
+                <div className="bg-bento-bg rounded-2xl p-4">
+                  <p className="text-[10px] font-black text-bento-muted uppercase tracking-widest">Pipeline Value</p>
+                  <p className="text-3xl font-black text-accent-sales mt-1">${analytics.totalLeadValue.toLocaleString()}</p>
+                </div>
+                <div className="bg-bento-bg rounded-2xl p-4">
+                  <p className="text-[10px] font-black text-bento-muted uppercase tracking-widest">Budget Spent</p>
+                  <p className="text-3xl font-black text-bento-text mt-1">${analytics.campaign.budget.toLocaleString()}</p>
+                </div>
+                <div className="bg-bento-bg rounded-2xl p-4">
+                  <p className="text-[10px] font-black text-bento-muted uppercase tracking-widest">Pipeline ROI</p>
+                  <p className={`text-3xl font-black mt-1 ${analytics.roi >= 1 ? 'text-accent-cs' : 'text-red-500'}`}>
+                    {analytics.roi.toFixed(1)}x
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between text-[11px] font-black text-bento-muted uppercase">
+                  <span>Win Rate</span>
+                  <span>{analytics.conversionRate}%</span>
+                </div>
+                <div className="h-2 bg-bento-bg rounded-full overflow-hidden">
+                  <div className="h-full bg-accent-cs transition-all" style={{ width: `${analytics.conversionRate}%` }} />
+                </div>
+              </div>
+
+              <p className="text-[10px] text-bento-muted font-medium italic">
+                Leads counted from campaign launch: {new Date(analytics.campaign.startDate).toLocaleDateString()}
+              </p>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -75,21 +75,25 @@ service cloud.firestore {
     match /tickets/{ticketId} {
       allow read: if isAuthenticated();
       allow create, update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
     match /campaigns/{campaignId} {
       allow read: if isAuthenticated();
       allow create, update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
     match /customers/{customerId} {
       allow read: if isAuthenticated();
       allow create, update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
     match /marketingEngagement/{engagementId} {
       allow read: if isAuthenticated();
       allow create, update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
     match /activities/{activityId} {

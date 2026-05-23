@@ -68,8 +68,8 @@ export default function CustomerDetail({ customerName, onBack }: CustomerDetailP
        onSnapshot(fallbackQ, (snap) => setSupportTickets(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
     });
 
-    // 3. Fetch Marketing Engagement
-    const marketingQ = query(collection(db, 'marketingEngagement'), limit(10));
+    // 3. Fetch Marketing Engagement filtered by customer
+    const marketingQ = query(collection(db, 'marketingEngagement'), where('customerName', '==', customerName), limit(10));
     const unsubMarketing = onSnapshot(marketingQ, (snap) => {
       setMarketingEngagement(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
@@ -242,16 +242,65 @@ export default function CustomerDetail({ customerName, onBack }: CustomerDetailP
           </div>
         </section>
 
-        {/* SUPPORT & MARKETING MINI-BLOCKS */}
+        {/* CS ROADMAP - data-backed */}
         <section className="dashboard-card col-span-1">
-          <span className="pill pill-support uppercase mb-2">CS Roadmap</span>
-          <div className="grid grid-cols-2 gap-2 mt-2">
-             {['Onboarding', 'Expansion', 'Renewal', 'Advocacy'].map((lab, i) => (
-                <div key={i} className="p-2 bg-bento-bg border border-bento-border rounded-lg text-center">
-                   <p className="text-[9px] font-black text-bento-muted uppercase tracking-tighter">{lab}</p>
-                </div>
-             ))}
-          </div>
+          <span className="pill pill-support uppercase mb-3">CS Roadmap</span>
+          {(() => {
+            const health = successData?.healthScore || 0;
+            const activityCount = activities.length;
+            const daysToRenewal = successData?.renewalDate
+              ? Math.ceil((new Date(successData.renewalDate).getTime() - Date.now()) / 86400000)
+              : 365;
+
+            const phases = [
+              {
+                label: 'Onboarding',
+                done: activityCount >= 1,
+                active: activityCount === 0,
+                desc: activityCount >= 1 ? `${activityCount} interaction${activityCount !== 1 ? 's' : ''} logged` : 'No activities yet',
+              },
+              {
+                label: 'Expansion',
+                done: health >= 80 && activityCount >= 3,
+                active: health >= 60 && activityCount >= 1,
+                desc: health >= 80 ? 'Health strong' : `Health at ${health}%`,
+              },
+              {
+                label: 'Renewal',
+                done: daysToRenewal > 60,
+                active: daysToRenewal <= 60 && daysToRenewal > 0,
+                desc: daysToRenewal > 0 ? `${daysToRenewal}d remaining` : 'Expired',
+              },
+              {
+                label: 'Advocacy',
+                done: health >= 90 && activityCount >= 5,
+                active: health >= 80 && activityCount >= 3,
+                desc: health >= 90 ? 'NPS candidate' : 'Build health first',
+              },
+            ];
+
+            return (
+              <div className="space-y-2 mt-1">
+                {phases.map((phase, i) => (
+                  <div key={i} className={`p-2.5 rounded-xl border flex items-center gap-2.5 ${
+                    phase.done ? 'bg-accent-cs/5 border-accent-cs/20' :
+                    phase.active ? 'bg-accent-sales/5 border-accent-sales/20' :
+                    'bg-bento-bg border-bento-border'
+                  }`}>
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${
+                      phase.done ? 'bg-accent-cs' : phase.active ? 'bg-accent-sales' : 'bg-bento-border'
+                    }`} />
+                    <div className="min-w-0">
+                      <p className={`text-[10px] font-black uppercase tracking-tighter ${
+                        phase.done ? 'text-accent-cs' : phase.active ? 'text-accent-sales' : 'text-bento-muted'
+                      }`}>{phase.label}</p>
+                      <p className="text-[9px] text-bento-muted font-medium truncate">{phase.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </section>
       </div>
 
