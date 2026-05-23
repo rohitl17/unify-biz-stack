@@ -1,49 +1,147 @@
-# Nexus Unified CRM: Data Model Definition
+# Nexus Unified CRM: Data Model
 
 ## Overview
-The data model is defined as an "Intermediate Representation" in `firebase-blueprint.json`. It prioritizes relationships and unified identity across disparate customer-facing workflows.
 
-## Primary Entities
+All data lives in Firestore. Seven collections share a common `customerName` / `customerId` string key for cross-module joins. This is a prototype-friendly simplification; the production path is a UUID `accountId` (see below).
 
-### 1. Lead (`/leads`)
-- **Purpose**: Tracks potential revenue and sales pipeline progress.
-- **Key Fields**:
-    - `name` (string): Prospect name.
-    - `value` (number): Estimated deal size.
-    - `status` (enum): New, Qualified, Negotiation, Lost.
-    - `stage` (enum): Discovery, Proposal, Negotiation, Closed Won, Closed Lost.
-    - `leadScore` (number): 0-100 score based on engagement.
+---
 
-### 2. MarketingEngagement (`/marketingEngagement`)
-- **Purpose**: Logs touchpoints from marketing campaigns.
-- **Key Fields**:
-    - `customerName` (string): Linking key to other modules.
-    - `type` (enum): Email Open, Link Click, Web Visit.
-    - `timestamp` (timestamp): When the event occurred.
+## Collections
 
-### 3. Activity (`/activities`)
-- **Purpose**: A unified log of human interactions (calls, meetings, notes).
-- **Key Fields**:
-    - `customerId` (string): Reference to the customer.
-    - `type` (enum): Call, Meeting, Note.
-    - `subject` (string): Short summary.
-    - `content` (string): Detailed logs.
-    - `createdBy` (string): UID of the team member.
+### `/customers`
+Accounts under active management.
 
-### 4. Task (`/tasks`)
-- **Purpose**: Actionable items for team members.
-- **Key Fields**:
-    - `assignedTo` (string): UID of the assignee.
-    - `priority` (enum): high, medium, low.
-    - `relatedTo` (string): Customer identifier.
-    - `category` (enum): sales, support, marketing, success.
+| Field | Type | Notes |
+|---|---|---|
+| `name` | string | Primary join key used by all other collections |
+| `healthScore` | number | 0–100; editable inline in Customer Success |
+| `plan` | enum | `basic` \| `pro` \| `enterprise` |
+| `renewalDate` | ISO string | Used for renewal countdown |
+| `successManagerId` | string (uid) | Owner |
 
-## Relationships & Linking
-- **The "Customer Name" Anchor**: Since this is a prototype, modules are currently linked via `customerName` or `relatedTo` strings. 
-- **Production Recommendation**: Transition to UUID-based linking where every Customer has a master `accountID` that serves as a foreign key for all sub-collections.
+Auto-created when a lead moves to `closed_won` (plan: basic, healthScore: 75, renewalDate: +365d).
 
-## Security Schema
-The model is protected by `firestore.rules` which enforces:
-1. **Authenticated Access**: All reads/writes require a valid Firebase Auth UID.
-2. **UID Ownership**: Creator-based write protection (e.g., users can only edit tasks assigned to them).
-3. **Admin Elevation**: Special `role == 'admin'` check for destructive operations (delete).
+---
+
+### `/leads`
+Sales pipeline records.
+
+| Field | Type | Notes |
+|---|---|---|
+| `company` | string | Links to `customers.name` |
+| `contactName` | string | |
+| `email` | string | |
+| `status` | enum | `new` \| `contacted` \| `qualified` \| `lost` |
+| `stage` | enum | `discovery` \| `proposal` \| `negotiation` \| `closed_won` \| `closed_lost` |
+| `value` | number | Deal size in USD |
+| `leadScore` | number | 0–100; computed by `computeLeadScore()` |
+| `ownerId` | string (uid) | |
+| `createdAt` | ISO string | |
+
+**Lead score formula**: stage points (20–100) + status points (0–15) + value points (0–25, capped at $20K). Written back to Firestore on every update.
+
+---
+
+### `/tickets`
+Support requests.
+
+| Field | Type | Notes |
+|---|---|---|
+| `subject` | string | |
+| `description` | string | |
+| `priority` | enum | `low` \| `medium` \| `high` \| `urgent` |
+| `status` | enum | `open` \| `in-progress` \| `resolved` |
+| `customerId` | string | Links to `customers.name` |
+| `assignedTo` | string | Team member name or uid |
+| `createdAt` | ISO string | |
+
+---
+
+### `/activities`
+Unified log of human interactions across all modules.
+
+| Field | Type | Notes |
+|---|---|---|
+| `type` | enum | `note` \| `call` \| `meeting` |
+| `subject` | string | Short label |
+| `content` | string | Full log text |
+| `customerId` | string | Links to `customers.name` |
+| `createdBy` | string (uid) | |
+| `createdAt` | ISO string | |
+
+Used by Support's thread view (filtered by `customerId`) and CustomerDetail's activity timeline.
+
+---
+
+### `/tasks`
+Actionable items surfaced in the Action Queue.
+
+| Field | Type | Notes |
+|---|---|---|
+| `title` | string | |
+| `priority` | enum | `low` \| `medium` \| `high` |
+| `category` | enum | `sales` \| `support` \| `success` \| `marketing` |
+| `relatedTo` | string | Customer name |
+| `assignedTo` | string (uid) | Queried by `user.uid` in Action Queue |
+| `dueDate` | string | Date string |
+| `createdAt` | ISO string | |
+
+Tasks can be created from Sales lead cards, Support ticket cards, and Customer Success account cards.
+
+---
+
+### `/campaigns`
+Marketing campaigns.
+
+| Field | Type | Notes |
+|---|---|---|
+| `name` | string | |
+| `type` | enum | `email` \| `social` \| `webinar` \| `ads` |
+| `status` | enum | `active` \| `planned` \| `completed` |
+| `budget` | number | USD |
+| `leadsGenerated` | number | Seeded; analytics modal computes real count from `/leads` |
+| `startDate` | ISO string | Used to filter leads for attribution |
+
+---
+
+### `/marketingEngagement`
+Individual engagement events (email opens, clicks, web visits).
+
+| Field | Type | Notes |
+|---|---|---|
+| `customerName` | string | Links to `customers.name` |
+| `type` | enum | `email_open` \| `link_click` \| `web_visit` |
+| `timestamp` | ISO string | Used for month-over-month delta on Overview |
+
+---
+
+## Cross-Module Relationships
+
+```
+customers.name ──┬── leads.company
+                 ├── tickets.customerId
+                 ├── activities.customerId
+                 ├── tasks.relatedTo
+                 └── marketingEngagement.customerName
+```
+
+All joins are string equality checks. There is no referential integrity — deleting a customer does not cascade.
+
+---
+
+## Known Architectural Debt
+
+**The `customerName` string join is fragile.** Duplicate company names, renames, or typos silently break cross-module relationships.
+
+**Production fix**: introduce an `accountId` UUID as the primary key on `customers`. Backfill all other collections with a one-time migration script. All queries switch from `where('customerName', '==', name)` to `where('accountId', '==', id)`.
+
+---
+
+## Security
+
+Enforced by `firestore.rules`:
+
+- All reads and writes require `request.auth != null`
+- `isAdmin()` is required for all deletes (admin = `role == 'admin'` in `/users`, or the bootstrap owner email)
+- `isValidLead()` validates required fields and enum values on lead create/update
+- `isValidUser()` validates required fields and role enum on user create/update

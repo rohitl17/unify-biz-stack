@@ -2,45 +2,82 @@
 
 ## Overview & Vision
 
-**Nexus** is a functional prototype of a **Unified CRM** designed specifically for SMBs. It explores a "Single-Source-of-Truth" architecture where Sales, Customer Success, Marketing, and Support are integrated into a cohesive visual experience.
+**Nexus** is a functional prototype of a **Unified CRM** designed specifically for SMBs. It delivers a "Single-Source-of-Truth" architecture where Sales, Customer Success, Marketing, and Support share a live Firestore backend and a unified customer profile view.
 
-### Core Value Pillars (Design Goals):
+### Core Value Pillars
 
-*   **Unified Context**: A central objective is to eliminate silos between departments. Every interaction—from marketing signals to support tickets—is presented in a single, unified customer profile.
-*   **Bento Grid Interface**: The application utilizes a "Bento Grid" styling to manage information density. The goal is to make complex customer data scannable and intuitive without overwhelming the user.
-*   **Real-Time Data**: Built on top of Firebase, the prototype demonstrates how real-time updates and an aggregated "Action Queue" can help small teams react faster to customer needs.
+- **Unified Context**: Every interaction — marketing signals, support tickets, sales activities — surfaces in a single customer profile accessible from any module.
+- **Bento Grid Interface**: A card-based layout manages information density, making complex customer data scannable without overwhelming the user.
+- **Real-Time Data**: All modules use Firestore `onSnapshot` listeners. Updates in one module appear instantly across the rest of the app.
 
 ---
 
-## Design Context: The Need for Unification
+## Getting Started
 
-SMBs often struggle with fragmented data because disparate tools (Sales, Support, Marketing) don't naturally talk to each other. Nexus was built to test several hypotheses on how to solve this:
+### Prerequisites
+- Node.js 18+
+- A Firebase project with Firestore and Google Auth enabled
 
-1.  **Schema Alignment**: Instead of syncing different databases, Nexus uses a single, shared data blueprint (Intermediate Representation) to ensure consistency across all modules.
-2.  **Reduced Context Switching**: By integrating a 360-degree view directly into the workflow, we test whether users can make better decisions (e.g., Sales knowing about a Support issue before a call).
-3.  **Visual Prioritization**: Moving away from traditional "table-heavy" CRM designs toward a more modern, card-based grid that highlights active signals rather than just rows of static data.
+### Local Setup
+
+1. Clone the repo
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Create `.env.local` in the project root (copy from `.env.example`) and fill in your Firebase credentials:
+   ```
+   VITE_FIREBASE_API_KEY=...
+   VITE_FIREBASE_AUTH_DOMAIN=...
+   VITE_FIREBASE_PROJECT_ID=...
+   VITE_FIREBASE_STORAGE_BUCKET=...
+   VITE_FIREBASE_MESSAGING_SENDER_ID=...
+   VITE_FIREBASE_APP_ID=...
+   VITE_FIREBASE_DATABASE_ID=(default)
+   ```
+4. Add `localhost` to your Firebase project's authorized domains (Authentication → Settings → Authorized domains)
+5. Start the dev server:
+   ```bash
+   npm run dev
+   ```
+
+> **Note**: Never commit `.env.local` or any file containing Firebase credentials. The `.gitignore` already covers this.
+
+### Seeding Demo Data
+
+In development, a **Seed Demo Data** button appears at the bottom of the sidebar. Clicking it clears all collections and populates 7 Firestore collections with 10 companies of realistic data (customers, leads, tickets, campaigns, activities, tasks, marketing engagement). Requires admin-level Firestore delete permissions — your account is pre-configured as admin in `firestore.rules`.
+
+---
+
+## Core Modules
+
+| Module | What it does |
+|---|---|
+| **Overview** | Live dashboard: pipeline value, health scores, active campaigns, engagement delta, live tickets, action queue — all from real Firestore data |
+| **Sales Pipeline** | Lead management with stage/status tracking, deterministic lead scoring, filter panel, task creation, and automatic customer creation on `closed_won` |
+| **Marketing Hub** | Campaign management with real analytics (leads generated since launch, computed ROI, win rate) |
+| **Support Inbox** | Ticket management with a chat-style activity thread per ticket and per-ticket task creation |
+| **Customer Success** | Account health monitoring with inline score editing, renewal countdown, and task creation |
+| **Customer Detail** | 360° profile aggregating activities, open tickets, deals, marketing engagement, and a data-driven CS roadmap |
+
+---
+
+## Tech Stack
+
+- **React 19 + TypeScript** — functional components and hooks throughout
+- **Vite** — dev server and bundler
+- **Tailwind CSS 4** — custom Bento theme with accent color variables (`accent-sales`, `accent-cs`, `accent-support`, `accent-marketing`)
+- **Framer Motion** (`motion/react`) — page transitions and modal animations
+- **Firebase Firestore** — real-time NoSQL backend via `onSnapshot`
+- **Firebase Auth** — Google OAuth via `signInWithPopup`
+- **Lucide React** — icon set
 
 ---
 
 ## Project Status
 
-**Current State**: High-Fidelity Functional Prototype.  
-**Purpose**: To demonstrate UI/UX patterns for a unified SMB platform, integrated with a live real-time backend. 
-**Next Steps**: See the [Production Roadmap](./docs/PRODUCTION_ROADMAP.md) for details on transitioning this to an enterprise-grade application.
+**Current State**: High-fidelity functional prototype — all six dashboard cards and all module interactions pull from live Firestore data.
 
-## Core Modules
+**Known architectural debt**: All cross-module joins use `customerName` as a string key. See [docs/DATA_MODEL.md](./docs/DATA_MODEL.md) for the UUID migration path.
 
-*   **Sales Pipeline**: High-velocity lead management and revenue tracking.
-*   **Marketing Hub**: Campaign performance and real-time activity feeds.
-*   **Support Center**: Mission-critical ticketing and issue resolution.
-*   **Customer Success**: Account health monitoring and renewal roadmaps.
-*   **Unified Profiles**: The definitive 360-degree view of every customer relationship.
-
----
-
-## Tech Stack
-- **React + TypeScript**
-- **Tailwind CSS** (Custom Bento Theme)
-- **Framer Motion** (Interaction Design)
-- **Firebase** (Firestore & Authentication)
-- **Lucide Icons**
+**Next Steps**: See [docs/PRODUCTION_ROADMAP.md](./docs/PRODUCTION_ROADMAP.md).
