@@ -21,8 +21,9 @@ import {
   CheckCircle2 as CheckCircleIcon,
   Plus as PlusIcon
 } from 'lucide-react';
-import { collection, query, onSnapshot, orderBy, limit, where } from 'firebase/firestore';
+import { onSnapshot, orderBy, limit, where } from 'firebase/firestore';
 import { db } from './lib/firebase';
+import { orgQuery } from './lib/firestoreWithOrg';
 import { runSeed } from './lib/seed';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -42,23 +43,24 @@ function AppContent() {
   const [seedMessage, setSeedMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !profile?.orgId) return;
+    const orgId = profile.orgId;
     const unsubs = [
-      onSnapshot(query(collection(db, 'tasks'), where('assignedTo', '==', user.uid), limit(10)),
+      onSnapshot(orgQuery('tasks', orgId, where('assignedTo', '==', user.uid), limit(10)),
         (snap) => setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}),
-      onSnapshot(query(collection(db, 'leads'), orderBy('createdAt', 'desc')),
+      onSnapshot(orgQuery('leads', orgId, orderBy('createdAt', 'desc')),
         (snap) => setLeads(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}),
-      onSnapshot(query(collection(db, 'tickets'), orderBy('createdAt', 'desc'), limit(5)),
+      onSnapshot(orgQuery('tickets', orgId, orderBy('createdAt', 'desc'), limit(5)),
         (snap) => setTickets(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}),
-      onSnapshot(collection(db, 'customers'),
+      onSnapshot(orgQuery('customers', orgId),
         (snap) => setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}),
-      onSnapshot(query(collection(db, 'campaigns'), orderBy('startDate', 'asc')),
+      onSnapshot(orgQuery('campaigns', orgId, orderBy('startDate', 'asc')),
         (snap) => setCampaigns(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}),
-      onSnapshot(collection(db, 'marketingEngagement'),
+      onSnapshot(orgQuery('marketingEngagement', orgId),
         (snap) => setEngagements(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}),
     ];
     return () => unsubs.forEach(u => u());
-  }, [user]);
+  }, [user, profile?.orgId]);
 
   // Derived stats for overview dashboard
   const pipelineValue = leads
@@ -231,7 +233,7 @@ function AppContent() {
                   setSeeding(true);
                   setSeedMessage(null);
                   try {
-                    const msg = await runSeed(user.uid);
+                    const msg = await runSeed(user.uid, profile?.orgId || '');
                     setSeedMessage('✓ ' + msg);
                   } catch (err) {
                     const msg = err instanceof Error ? err.message : String(err);

@@ -8,6 +8,7 @@ import {
   doc,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { addOrgDoc, orgQuery } from '../lib/firestoreWithOrg';
 import { useAuth } from '../hooks/useAuth';
 import {
   Heart,
@@ -36,7 +37,7 @@ interface CustomerSuccessProps {
 }
 
 export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessProps) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isAdding, setIsAdding] = useState(false);
@@ -50,21 +51,22 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
   const [newTask, setNewTask] = useState({ title: '', priority: 'medium' as 'low' | 'medium' | 'high', dueDate: '' });
 
   useEffect(() => {
-    if (!user) return;
-    const unsub = onSnapshot(collection(db, 'customers'), (snap) => {
+    if (!user || !profile?.orgId) return;
+    const unsub = onSnapshot(orgQuery('customers', profile.orgId), (snap) => {
       setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Customer)));
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'customers'));
     return () => unsub();
-  }, [user]);
+  }, [user, profile?.orgId]);
 
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!profile?.orgId) return;
     try {
-      await addDoc(collection(db, 'customers'), {
+      await addOrgDoc('customers', {
         ...newCust,
         successManagerId: user?.uid,
         renewalDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-      });
+      }, profile.orgId);
       setIsAdding(false);
       setNewCust({ name: '', plan: 'pro', healthScore: 80 });
     } catch (error) {
@@ -104,15 +106,15 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
 
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!creatingTaskFor) return;
+    if (!creatingTaskFor || !profile?.orgId) return;
     try {
-      await addDoc(collection(db, 'tasks'), {
+      await addOrgDoc('tasks', {
         ...newTask,
         relatedTo: creatingTaskFor.name,
         category: 'success',
         assignedTo: user?.uid,
         createdAt: new Date().toISOString(),
-      });
+      }, profile.orgId);
       setCreatingTaskFor(null);
       setNewTask({ title: '', priority: 'medium', dueDate: '' });
     } catch (error) {

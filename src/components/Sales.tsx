@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import {
-  collection,
-  query,
-  onSnapshot,
-  addDoc,
   updateDoc,
   doc,
   getDocs,
   where,
   orderBy,
+  query,
+  collection,
+  onSnapshot,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { addOrgDoc, orgQuery } from '../lib/firestoreWithOrg';
 import { useAuth } from '../hooks/useAuth';
 import {
   Users,
@@ -63,7 +63,7 @@ function computeLeadScore(lead: Partial<Lead>): number {
 }
 
 export default function Sales({ onSelectCustomer, campaigns }: SalesProps) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilter, setShowFilter] = useState(false);
@@ -75,26 +75,27 @@ export default function Sales({ onSelectCustomer, campaigns }: SalesProps) {
   const [newTask, setNewTask] = useState({ title: '', priority: 'medium' as 'low' | 'medium' | 'high', dueDate: '' });
 
   useEffect(() => {
-    if (!user) return;
-    const q = query(collection(db, 'leads'), orderBy('createdAt', 'desc'));
+    if (!user || !profile?.orgId) return;
+    const q = orgQuery('leads', profile.orgId, orderBy('createdAt', 'desc'));
     const unsub = onSnapshot(q, (snap) => {
       setLeads(snap.docs.map(d => ({ id: d.id, ...d.data() } as Lead)));
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'leads'));
     return () => unsub();
-  }, [user]);
+  }, [user, profile?.orgId]);
 
   const handleAddLead = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!profile?.orgId) return;
     try {
       const { campaignId, ...rest } = newLead;
       const draft = { ...rest, status: 'new' as const, stage: 'discovery' as const };
-      await addDoc(collection(db, 'leads'), {
+      await addOrgDoc('leads', {
         ...draft,
         leadScore: computeLeadScore(draft),
         ownerId: user?.uid,
         createdAt: new Date().toISOString(),
         ...(campaignId ? { campaignId } : {}),
-      });
+      }, profile.orgId);
       setIsAdding(false);
       setNewLead({ company: '', contactName: '', email: '', value: 0, campaignId: '' });
     } catch (error) {
@@ -103,23 +104,28 @@ export default function Sales({ onSelectCustomer, campaigns }: SalesProps) {
   };
 
   const updateField = async (leadId: string, field: string, value: any) => {
+    if (!profile?.orgId) return;
     try {
       const lead = leads.find(l => l.id === leadId);
       const updated = { ...(lead || {}), [field]: value };
       await updateDoc(doc(db, 'leads', leadId), { [field]: value, leadScore: computeLeadScore(updated) });
 
       if (field === 'stage' && value === 'closed_won' && lead) {
-        const existing = await getDocs(query(collection(db, 'customers'), where('name', '==', lead.company)));
+        const existing = await getDocs(query(
+          collection(db, 'customers'),
+          where('orgId', '==', profile.orgId),
+          where('name', '==', lead.company)
+        ));
         if (existing.empty) {
           const renewalDate = new Date();
           renewalDate.setFullYear(renewalDate.getFullYear() + 1);
-          await addDoc(collection(db, 'customers'), {
+          await addOrgDoc('customers', {
             name: lead.company,
             plan: 'basic',
             healthScore: 75,
             renewalDate: renewalDate.toISOString(),
             successManagerId: user?.uid || '',
-          });
+          }, profile.orgId);
         }
       }
     } catch (error) {
@@ -129,15 +135,15 @@ export default function Sales({ onSelectCustomer, campaigns }: SalesProps) {
 
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!creatingTaskFor) return;
+    if (!creatingTaskFor || !profile?.orgId) return;
     try {
-      await addDoc(collection(db, 'tasks'), {
+      await addOrgDoc('tasks', {
         ...newTask,
         relatedTo: creatingTaskFor.company,
         category: 'sales',
         assignedTo: user?.uid,
         createdAt: new Date().toISOString(),
-      });
+      }, profile.orgId);
       setCreatingTaskFor(null);
       setNewTask({ title: '', priority: 'medium', dueDate: '' });
     } catch (error) {

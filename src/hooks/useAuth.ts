@@ -6,7 +6,7 @@ import {
   signOut,
   User as FirebaseUser
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, addDoc, collection, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 
 export interface UserProfile {
@@ -15,6 +15,24 @@ export interface UserProfile {
   email: string;
   role: 'admin' | 'sales' | 'support' | 'success' | 'marketing';
   photoURL?: string;
+  orgId: string;
+}
+
+async function getOrCreateOrg(fbUser: FirebaseUser): Promise<string> {
+  // Check if user already has a profile with an orgId
+  const profileRef = doc(db, 'users', fbUser.uid);
+  const snap = await getDoc(profileRef);
+  if (snap.exists() && snap.data().orgId) {
+    return snap.data().orgId as string;
+  }
+  // New user — create a new org for them
+  const orgRef = await addDoc(collection(db, 'organizations'), {
+    name: fbUser.displayName ? `${fbUser.displayName}'s Org` : 'My Organization',
+    plan: 'starter',
+    ownerId: fbUser.uid,
+    createdAt: new Date().toISOString(),
+  });
+  return orgRef.id;
 }
 
 export function useAuth() {
@@ -31,15 +49,18 @@ export function useAuth() {
           const profileRef = doc(db, 'users', fbUser.uid);
           const snap = await getDoc(profileRef);
 
-          if (snap.exists()) {
+          if (snap.exists() && snap.data().orgId) {
             setProfile(snap.data() as UserProfile);
           } else {
+            // New user or existing user missing orgId — create/assign org
+            const orgId = await getOrCreateOrg(fbUser);
             const newProfile: UserProfile = {
               uid: fbUser.uid,
               name: fbUser.displayName || 'Anonymous User',
               email: fbUser.email || '',
-              role: fbUser.email === 'rohitlokwani17@gmail.com' ? 'admin' : 'sales',
-              photoURL: fbUser.photoURL || undefined
+              role: 'admin', // org creator is always admin of their own org
+              photoURL: fbUser.photoURL || undefined,
+              orgId,
             };
             await setDoc(profileRef, newProfile);
             setProfile(newProfile);

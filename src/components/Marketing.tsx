@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
-  collection,
-  query,
   onSnapshot,
-  addDoc,
   updateDoc,
   doc,
   orderBy,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { addOrgDoc, orgQuery } from '../lib/firestoreWithOrg';
 import { useAuth } from '../hooks/useAuth';
 import {
   Plus,
@@ -43,21 +41,21 @@ interface MarketingProps {
 }
 
 export default function Marketing({ leads: allLeads }: MarketingProps) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [analytics, setAnalytics] = useState<CampaignAnalytics | null>(null);
   const [newCamp, setNewCamp] = useState({ name: '', type: 'email' as Campaign['type'], budget: 1000 });
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !profile?.orgId) return;
     const unsub = onSnapshot(
-      query(collection(db, 'campaigns'), orderBy('startDate', 'desc')),
+      orgQuery('campaigns', profile.orgId, orderBy('startDate', 'desc')),
       (snap) => setCampaigns(snap.docs.map(d => ({ id: d.id, ...d.data() } as Campaign))),
       (error) => handleFirestoreError(error, OperationType.LIST, 'campaigns')
     );
     return () => unsub();
-  }, [user]);
+  }, [user, profile?.orgId]);
 
   const openAnalytics = (camp: Campaign) => {
     // Use campaignId for accurate attribution
@@ -77,12 +75,13 @@ export default function Marketing({ leads: allLeads }: MarketingProps) {
 
   const handleAddCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!profile?.orgId) return;
     try {
-      await addDoc(collection(db, 'campaigns'), {
+      await addOrgDoc('campaigns', {
         ...newCamp,
         status: 'active',
         startDate: new Date().toISOString(),
-      });
+      }, profile.orgId);
       setIsAdding(false);
       setNewCamp({ name: '', type: 'email', budget: 1000 });
     } catch (error) {

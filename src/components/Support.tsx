@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import {
-  collection,
   query,
   onSnapshot,
-  addDoc,
   updateDoc,
   doc,
   orderBy,
   where,
   limit,
+  collection,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { addOrgDoc, orgQuery } from '../lib/firestoreWithOrg';
 import { useAuth } from '../hooks/useAuth';
 import {
   MessageSquare,
@@ -39,7 +39,7 @@ interface Ticket {
 }
 
 export default function Support() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [isAdding, setIsAdding] = useState(false);
@@ -56,17 +56,17 @@ export default function Support() {
   });
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !profile?.orgId) return;
     const unsub = onSnapshot(
-      query(collection(db, 'tickets'), orderBy('createdAt', 'desc')),
+      orgQuery('tickets', profile.orgId, orderBy('createdAt', 'desc')),
       (snap) => setTickets(snap.docs.map(d => ({ id: d.id, ...d.data() } as Ticket))),
       (error) => handleFirestoreError(error, OperationType.LIST, 'tickets')
     );
-    const custUnsub = onSnapshot(collection(db, 'customers'), (snap) => {
+    const custUnsub = onSnapshot(orgQuery('customers', profile.orgId), (snap) => {
       setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
     return () => { unsub(); custUnsub(); };
-  }, [user]);
+  }, [user, profile?.orgId]);
 
   // Load thread activities when a ticket is selected
   useEffect(() => {
@@ -88,14 +88,14 @@ export default function Support() {
 
   const handleAddTicket = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTicket.customerId) return;
+    if (!newTicket.customerId || !profile?.orgId) return;
     try {
-      await addDoc(collection(db, 'tickets'), {
+      await addOrgDoc('tickets', {
         ...newTicket,
         status: 'open',
         assignedTo: user?.displayName || 'Support Team',
         createdAt: new Date().toISOString(),
-      });
+      }, profile.orgId);
       setIsAdding(false);
       setNewTicket({ subject: '', description: '', priority: 'medium', customerId: '' });
     } catch (error) {
@@ -112,16 +112,16 @@ export default function Support() {
   };
 
   const handleReply = async () => {
-    if (!replyText.trim() || !threadTicket) return;
+    if (!replyText.trim() || !threadTicket || !profile?.orgId) return;
     try {
-      await addDoc(collection(db, 'activities'), {
+      await addOrgDoc('activities', {
         type: 'note',
         subject: `Support: ${threadTicket.subject}`,
         content: replyText,
         customerId: threadTicket.customerId,
         createdBy: user?.uid,
         createdAt: new Date().toISOString(),
-      });
+      }, profile.orgId);
       setReplyText('');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'activities');
@@ -130,15 +130,15 @@ export default function Support() {
 
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!creatingTaskFor) return;
+    if (!creatingTaskFor || !profile?.orgId) return;
     try {
-      await addDoc(collection(db, 'tasks'), {
+      await addOrgDoc('tasks', {
         ...newTask,
         relatedTo: creatingTaskFor.customerId,
         category: 'support',
         assignedTo: user?.uid,
         createdAt: new Date().toISOString(),
-      });
+      }, profile.orgId);
       setCreatingTaskFor(null);
       setNewTask({ title: '', priority: 'medium', dueDate: '' });
     } catch (error) {

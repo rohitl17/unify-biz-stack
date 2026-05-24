@@ -1,4 +1,4 @@
-import { collection, addDoc, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, deleteDoc, doc, query, where } from 'firebase/firestore';
 import { db } from './firebase';
 
 const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -18,8 +18,8 @@ const CONTACTS = [
   'Lucia Mendez', 'Arjun Patel',
 ];
 
-async function clearCol(name: string) {
-  const snap = await getDocs(collection(db, name));
+async function clearCol(name: string, orgId: string) {
+  const snap = await getDocs(query(collection(db, name), where('orgId', '==', orgId)));
   await Promise.all(snap.docs.map(d => deleteDoc(doc(db, name, d.id))));
 }
 
@@ -27,34 +27,18 @@ async function seedCol(name: string, docs: object[]) {
   await Promise.all(docs.map(d => addDoc(collection(db, name), d)));
 }
 
-export async function runSeed(uid: string): Promise<string> {
+export async function runSeed(uid: string, orgId: string): Promise<string> {
   const COLS = ['customers', 'leads', 'tickets', 'campaigns', 'activities', 'tasks', 'marketingEngagement'];
-  for (const c of COLS) await clearCol(c);
+  for (const c of COLS) await clearCol(c, orgId);
 
   const customers = COMPANIES.map(name => ({
     name,
+    orgId,
     healthScore: pick([45, 58, 62, 70, 75, 80, 85, 88, 92, 96]),
     plan: pick(['basic', 'pro', 'enterprise']),
     renewalDate: daysFromNow(pick([15, 32, 45, 60, 90, 120, 180, 210, 270, 340])),
     successManagerId: uid,
   }));
-
-  const campaignDocs = [
-    'Q2 Email Nurture Sequence', 'Spring Webinar: Scale Your CRM',
-    'LinkedIn Thought Leadership Ads', 'Re-engagement: Churned Leads',
-    'Product Launch Announcement', 'Customer Success Stories Series',
-    'Google Ads — SMB Segment', 'Partner Co-marketing Campaign',
-  ].map(name => ({
-    name,
-    type: pick(['email', 'social', 'webinar', 'ads'] as const),
-    status: pick(['active', 'active', 'planned', 'completed'] as const),
-    budget: pick([1000, 2500, 5000, 8000, 12000, 20000]),
-    startDate: daysAgo(rand(5, 60)),
-  }));
-
-  // Seed campaigns first so we can capture their IDs for lead attribution
-  const campaignRefs = await Promise.all(campaignDocs.map(d => addDoc(collection(db, 'campaigns'), d)));
-  const campaignIds = campaignRefs.map(r => r.id);
 
   const stages = ['discovery', 'proposal', 'negotiation', 'closed_won', 'closed_lost'] as const;
   const statuses = ['new', 'contacted', 'qualified', 'lost'] as const;
@@ -62,10 +46,9 @@ export async function runSeed(uid: string): Promise<string> {
   const leads = COMPANIES.map((company, i) => {
     const stage = pick([...stages]);
     const status = stage === 'closed_won' ? 'qualified' : stage === 'closed_lost' ? 'lost' : pick([...statuses]);
-    // ~70% of leads are attributed to a campaign
-    const attributed = Math.random() > 0.3;
     return {
       company,
+      orgId,
       contactName: CONTACTS[i],
       email: `${CONTACTS[i].split(' ')[0].toLowerCase()}@${company.toLowerCase().replace(/ /g, '')}.com`,
       status,
@@ -74,7 +57,6 @@ export async function runSeed(uid: string): Promise<string> {
       leadScore: 0,
       ownerId: uid,
       createdAt: daysAgo(rand(1, 90)),
-      ...(attributed ? { campaignId: pick(campaignIds) } : {}),
     };
   });
 
@@ -100,11 +82,27 @@ export async function runSeed(uid: string): Promise<string> {
   const tickets = COMPANIES.map((company, i) => ({
     subject: ticketSubjects[i],
     description: ticketDescriptions[i],
+    orgId,
     priority: pick(['low', 'medium', 'high', 'urgent'] as const),
     status: pick(['open', 'open', 'in-progress', 'resolved'] as const),
     customerId: company,
     assignedTo: pick(['Support Team', 'Alex Rivera', 'Jordan Smith']),
     createdAt: daysAgo(rand(0, 14)),
+  }));
+
+  const campaigns = [
+    'Q2 Email Nurture Sequence', 'Spring Webinar: Scale Your CRM',
+    'LinkedIn Thought Leadership Ads', 'Re-engagement: Churned Leads',
+    'Product Launch Announcement', 'Customer Success Stories Series',
+    'Google Ads — SMB Segment', 'Partner Co-marketing Campaign',
+  ].map(name => ({
+    name,
+    orgId,
+    type: pick(['email', 'social', 'webinar', 'ads'] as const),
+    status: pick(['active', 'active', 'planned', 'completed'] as const),
+    budget: pick([1000, 2500, 5000, 8000, 12000, 20000]),
+    leadsGenerated: rand(0, 40),
+    startDate: daysAgo(rand(5, 60)),
   }));
 
   const activityContents = [
@@ -129,6 +127,7 @@ export async function runSeed(uid: string): Promise<string> {
         type: pick(['note', 'call', 'meeting'] as const),
         subject: pick(['CALL', 'NOTE', 'MEETING']),
         content: pick(activityContents),
+        orgId,
         customerId: company,
         createdBy: uid,
         createdAt: daysAgo(rand(0, 30)),
@@ -144,6 +143,7 @@ export async function runSeed(uid: string): Promise<string> {
   ];
   const tasks = COMPANIES.map((company, i) => ({
     title: taskTitles[i % taskTitles.length],
+    orgId,
     priority: pick(['low', 'medium', 'high'] as const),
     category: pick(['sales', 'support', 'success', 'marketing'] as const),
     relatedTo: company,
@@ -158,6 +158,7 @@ export async function runSeed(uid: string): Promise<string> {
     for (let j = 0; j < count; j++) {
       engagements.push({
         customerName: company,
+        orgId,
         type: pick(['email_open', 'link_click', 'web_visit'] as const),
         timestamp: daysAgo(rand(0, 60)),
       });
@@ -167,10 +168,10 @@ export async function runSeed(uid: string): Promise<string> {
   await seedCol('customers', customers);
   await seedCol('leads', leads);
   await seedCol('tickets', tickets);
-  // campaigns already seeded above (needed IDs for lead attribution)
+  await seedCol('campaigns', campaigns);
   await seedCol('activities', activities);
   await seedCol('tasks', tasks);
   await seedCol('marketingEngagement', engagements);
 
-  return `Seeded: ${customers.length} customers, ${leads.length} leads, ${tickets.length} tickets, ${campaignDocs.length} campaigns, ${activities.length} activities, ${tasks.length} tasks, ${engagements.length} engagements`;
+  return `Seeded: ${customers.length} customers, ${leads.length} leads, ${tickets.length} tickets, ${campaigns.length} campaigns, ${activities.length} activities, ${tasks.length} tasks, ${engagements.length} engagements`;
 }

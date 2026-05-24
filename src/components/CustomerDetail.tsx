@@ -9,6 +9,7 @@ import {
   addDoc
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { addOrgDoc } from '../lib/firestoreWithOrg';
 import { useAuth } from '../hooks/useAuth';
 import { 
   Building, 
@@ -37,7 +38,7 @@ interface CustomerDetailProps {
 }
 
 export default function CustomerDetail({ customerName, onBack }: CustomerDetailProps) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [salesLeads, setSalesLeads] = useState<any[]>([]);
   const [supportTickets, setSupportTickets] = useState<any[]>([]);
   const [marketingEngagement, setMarketingEngagement] = useState<any[]>([]);
@@ -51,31 +52,33 @@ export default function CustomerDetail({ customerName, onBack }: CustomerDetailP
   const [isLogging, setIsLogging] = useState(false);
 
   useEffect(() => {
+    if (!profile?.orgId) return;
     setLoading(true);
-    
+    const orgId = profile.orgId;
+
     // 1. Fetch Sales Leads for this company
-    const leadsQ = query(collection(db, 'leads'), where('company', '==', customerName));
+    const leadsQ = query(collection(db, 'leads'), where('orgId', '==', orgId), where('company', '==', customerName));
     const unsubLeads = onSnapshot(leadsQ, (snap) => {
       setSalesLeads(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
     // 2. Fetch Support Tickets
-    const ticketsQ = query(collection(db, 'tickets'), where('customerId', '==', customerName), orderBy('createdAt', 'desc'), limit(5));
+    const ticketsQ = query(collection(db, 'tickets'), where('orgId', '==', orgId), where('customerId', '==', customerName), orderBy('createdAt', 'desc'), limit(5));
     const unsubTickets = onSnapshot(ticketsQ, (snap) => {
       setSupportTickets(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, () => {
-       const fallbackQ = query(collection(db, 'tickets'), where('customerId', '==', customerName));
+       const fallbackQ = query(collection(db, 'tickets'), where('orgId', '==', orgId), where('customerId', '==', customerName));
        onSnapshot(fallbackQ, (snap) => setSupportTickets(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
     });
 
     // 3. Fetch Marketing Engagement filtered by customer
-    const marketingQ = query(collection(db, 'marketingEngagement'), where('customerName', '==', customerName), limit(10));
+    const marketingQ = query(collection(db, 'marketingEngagement'), where('orgId', '==', orgId), where('customerName', '==', customerName), limit(10));
     const unsubMarketing = onSnapshot(marketingQ, (snap) => {
       setMarketingEngagement(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
     // 4. Fetch Customer Success Data
-    const successQ = query(collection(db, 'customers'), where('name', '==', customerName));
+    const successQ = query(collection(db, 'customers'), where('orgId', '==', orgId), where('name', '==', customerName));
     const unsubSuccess = onSnapshot(successQ, (snap) => {
       if (!snap.empty) {
         setSuccessData({ id: snap.docs[0].id, ...snap.docs[0].data() });
@@ -85,7 +88,8 @@ export default function CustomerDetail({ customerName, onBack }: CustomerDetailP
 
     // 5. Fetch Activities (Timeline)
     const activitiesQ = query(
-      collection(db, 'activities'), 
+      collection(db, 'activities'),
+      where('orgId', '==', orgId),
       where('customerId', '==', customerName),
       orderBy('createdAt', 'desc'),
       limit(20)
@@ -93,12 +97,12 @@ export default function CustomerDetail({ customerName, onBack }: CustomerDetailP
     const unsubActivities = onSnapshot(activitiesQ, (snap) => {
       setActivities(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, () => {
-      const fb = query(collection(db, 'activities'), where('customerId', '==', customerName));
+      const fb = query(collection(db, 'activities'), where('orgId', '==', orgId), where('customerId', '==', customerName));
       onSnapshot(fb, (snap) => setActivities(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
     });
 
     // 6. Fetch Tasks
-    const tasksQ = query(collection(db, 'tasks'), where('relatedTo', '==', customerName));
+    const tasksQ = query(collection(db, 'tasks'), where('orgId', '==', orgId), where('relatedTo', '==', customerName));
     const unsubTasks = onSnapshot(tasksQ, (snap) => {
       setTasks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
@@ -106,19 +110,19 @@ export default function CustomerDetail({ customerName, onBack }: CustomerDetailP
     return () => {
       unsubLeads(); unsubTickets(); unsubMarketing(); unsubSuccess(); unsubActivities(); unsubTasks();
     };
-  }, [customerName]);
+  }, [customerName, profile?.orgId]);
 
   const handleLogActivity = async (type: 'note' | 'call' | 'meeting') => {
-    if (!newNote.trim()) return;
+    if (!newNote.trim() || !profile?.orgId) return;
     try {
-      await addDoc(collection(db, 'activities'), {
+      await addOrgDoc('activities', {
         type,
         subject: type.toUpperCase(),
         content: newNote,
         customerId: customerName,
         createdBy: user?.uid,
         createdAt: new Date().toISOString()
-      });
+      }, profile.orgId);
       setNewNote('');
       setIsLogging(false);
     } catch (error) {

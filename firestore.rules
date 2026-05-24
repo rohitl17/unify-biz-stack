@@ -1,111 +1,126 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    // 
-    // Collection: users
-    // Document ID: {userId}
-    // Fields: uid, name, email, role, photoURL
-    //
-    // Collection: leads
-    // Document ID: {leadId}
-    // Fields: company, contactName, email, status, value, ownerId, createdAt
-    //
-    // Collection: tickets
-    // Document ID: {ticketId}
-    // Fields: subject, description, priority, status, customerId, assignedTo, createdAt
-    //
-    // Collection: campaigns
-    // Document ID: {campaignId}
-    // Fields: name, type, status, budget, leadsGenerated, startDate
-    //
-    // Collection: customers
-    // Document ID: {customerId}
-    // Fields: name, healthScore, plan, renewalDate, successManagerId
-    //
-    // ===============================================================
 
-    // Helper Functions
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
     function isAuthenticated() {
       return request.auth != null;
     }
-    
-    function isOwner(userId) {
+
+    function currentUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isOrgMember(orgId) {
+      return isAuthenticated() && currentUser().orgId == orgId;
+    }
+
+    function isOrgAdmin(orgId) {
+      return isOrgMember(orgId) && currentUser().role == 'admin';
+    }
+
+    function isSelf(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function isAdmin() {
-      return isAuthenticated() && 
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         (request.auth.token.email == "rohitlokwani17@gmail.com" && request.auth.token.email_verified == true));
-    }
-
     function isValidUser(data) {
-      return data.keys().hasAll(['uid', 'email', 'role']) &&
+      return data.keys().hasAll(['uid', 'email', 'role', 'orgId']) &&
              data.uid is string &&
              data.email is string &&
+             data.orgId is string &&
              data.role in ['admin', 'sales', 'support', 'success', 'marketing'];
     }
 
     function isValidLead(data) {
-      return data.keys().hasAll(['company', 'status', 'ownerId', 'createdAt']) &&
+      return data.keys().hasAll(['company', 'status', 'ownerId', 'createdAt', 'orgId']) &&
              data.company is string && data.company.size() < 100 &&
              data.status in ['new', 'contacted', 'qualified', 'lost'] &&
              data.ownerId is string &&
-             data.createdAt is string;
+             data.createdAt is string &&
+             data.orgId is string;
     }
 
-    // Rules
+    function writingToOwnOrg(data) {
+      return isAuthenticated() && data.orgId == currentUser().orgId;
+    }
+
+    // ── Users ────────────────────────────────────────────────────────────────
+
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create: if isOwner(userId) && isValidUser(request.resource.data);
-      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data);
+      allow create: if isSelf(userId) && isValidUser(request.resource.data);
+      allow update: if (isSelf(userId) || isOrgAdmin(resource.data.orgId)) && isValidUser(request.resource.data);
     }
+
+    // ── Organizations ────────────────────────────────────────────────────────
+
+    match /organizations/{orgId} {
+      allow read: if isOrgMember(orgId);
+      allow create: if isAuthenticated();
+      allow update: if isOrgAdmin(orgId);
+    }
+
+    // ── Leads ────────────────────────────────────────────────────────────────
 
     match /leads/{leadId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidLead(request.resource.data);
-      allow update: if isAuthenticated() && isValidLead(request.resource.data);
-      allow delete: if isAdmin();
+      allow read: if isOrgMember(resource.data.orgId);
+      allow create: if writingToOwnOrg(request.resource.data) && isValidLead(request.resource.data);
+      allow update: if isOrgMember(resource.data.orgId) && isValidLead(request.resource.data);
+      allow delete: if isOrgAdmin(resource.data.orgId);
     }
+
+    // ── Tickets ──────────────────────────────────────────────────────────────
 
     match /tickets/{ticketId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated();
-      allow delete: if isAdmin();
+      allow read: if isOrgMember(resource.data.orgId);
+      allow create: if writingToOwnOrg(request.resource.data);
+      allow update: if isOrgMember(resource.data.orgId);
+      allow delete: if isOrgAdmin(resource.data.orgId);
     }
+
+    // ── Campaigns ────────────────────────────────────────────────────────────
 
     match /campaigns/{campaignId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated();
-      allow delete: if isAdmin();
+      allow read: if isOrgMember(resource.data.orgId);
+      allow create: if writingToOwnOrg(request.resource.data);
+      allow update: if isOrgMember(resource.data.orgId);
+      allow delete: if isOrgAdmin(resource.data.orgId);
     }
+
+    // ── Customers ────────────────────────────────────────────────────────────
 
     match /customers/{customerId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated();
-      allow delete: if isAdmin();
+      allow read: if isOrgMember(resource.data.orgId);
+      allow create: if writingToOwnOrg(request.resource.data);
+      allow update: if isOrgMember(resource.data.orgId);
+      allow delete: if isOrgAdmin(resource.data.orgId);
     }
+
+    // ── Marketing Engagement ─────────────────────────────────────────────────
 
     match /marketingEngagement/{engagementId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated();
-      allow delete: if isAdmin();
+      allow read: if isOrgMember(resource.data.orgId);
+      allow create: if writingToOwnOrg(request.resource.data);
+      allow update: if isOrgMember(resource.data.orgId);
+      allow delete: if isOrgAdmin(resource.data.orgId);
     }
+
+    // ── Activities ───────────────────────────────────────────────────────────
 
     match /activities/{activityId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if isAdmin();
+      allow read: if isOrgMember(resource.data.orgId);
+      allow create: if writingToOwnOrg(request.resource.data);
+      allow update, delete: if isOrgAdmin(resource.data.orgId);
     }
 
+    // ── Tasks ────────────────────────────────────────────────────────────────
+
     match /tasks/{taskId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated();
-      allow delete: if isAdmin();
+      allow read: if isOrgMember(resource.data.orgId);
+      allow create: if writingToOwnOrg(request.resource.data);
+      allow update: if isOrgMember(resource.data.orgId);
+      allow delete: if isOrgAdmin(resource.data.orgId);
     }
   }
 }
