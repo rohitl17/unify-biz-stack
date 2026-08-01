@@ -70,9 +70,10 @@ export default function Support() {
 
   // Load thread activities when a ticket is selected
   useEffect(() => {
-    if (!threadTicket) { setThreadActivities([]); return; }
+    if (!threadTicket || !profile?.orgId) { setThreadActivities([]); return; }
     const q = query(
       collection(db, 'activities'),
+      where('orgId', '==', profile.orgId),
       where('customerId', '==', threadTicket.customerId),
       orderBy('createdAt', 'asc'),
       limit(50)
@@ -80,11 +81,11 @@ export default function Support() {
     const unsub = onSnapshot(q, (snap) => {
       setThreadActivities(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }, () => {
-      const fallback = query(collection(db, 'activities'), where('customerId', '==', threadTicket.customerId));
+      const fallback = query(collection(db, 'activities'), where('orgId', '==', profile.orgId), where('customerId', '==', threadTicket.customerId));
       onSnapshot(fallback, (snap) => setThreadActivities(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     });
     return () => unsub();
-  }, [threadTicket]);
+  }, [threadTicket, profile?.orgId]);
 
   const handleAddTicket = async (e: React.FormEvent) => {
     e.preventDefault();

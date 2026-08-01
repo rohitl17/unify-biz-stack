@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  collection, 
-  query, 
-  where, 
+  collection,
+  query,
+  where,
   onSnapshot,
   orderBy,
   limit,
-  addDoc
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { addOrgDoc } from '../lib/firestoreWithOrg';
