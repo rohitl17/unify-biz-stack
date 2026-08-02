@@ -80,7 +80,7 @@ This document tracks what has been built and what remains to reach production qu
   - [ ] "Next Best Action" — suggests follow-up based on health score, open tickets, activity recency
   - [ ] Lead prioritization — rank leads by predicted close probability
 - [ ] **In-app notifications**: The bell icon in the header is rendered but non-functional. Wire it to a `notifications` Firestore collection; surface alerts for high-priority tickets, health score drops below 60, and tasks due today.
-- [ ] **CSV Import/Export**: Client-side CSV export for leads and customers; CSV import for bulk lead creation with validation.
+- [x] **CSV Import/Export**: Client-side CSV export for leads; CSV import for bulk lead creation with per-row validation and preview (`src/lib/csv.ts`).
 - [ ] **CI/CD**: GitHub Actions — `tsc --noEmit` + deploy to Firebase Hosting on push to `main`.
 
 ---

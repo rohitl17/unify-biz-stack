@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { onSnapshot, orderBy, limit, where } from 'firebase/firestore';
 import { orgQuery } from './lib/firestoreWithOrg';
+import { effectiveHealth } from './lib/healthScore';
 import { runSeed } from './lib/seed';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -69,6 +70,7 @@ function AppContent() {
   const [leads, setLeads] = useState<any[]>([]);
   const [tickets, setTickets] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
+  const [activities, setActivities] = useState<any[]>([]);
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [engagements, setEngagements] = useState<any[]>([]);
   const [seeding, setSeeding] = useState(false);
@@ -82,8 +84,10 @@ function AppContent() {
         (snap) => setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}),
       onSnapshot(orgQuery('leads', orgId, orderBy('createdAt', 'desc')),
         (snap) => setLeads(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}),
-      onSnapshot(orgQuery('tickets', orgId, orderBy('createdAt', 'desc'), limit(5)),
+      onSnapshot(orgQuery('tickets', orgId, orderBy('createdAt', 'desc')),
         (snap) => setTickets(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}),
+      onSnapshot(orgQuery('activities', orgId),
+        (snap) => setActivities(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}),
       onSnapshot(orgQuery('customers', orgId),
         (snap) => setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}),
       onSnapshot(orgQuery('campaigns', orgId, orderBy('startDate', 'asc')),
@@ -104,10 +108,11 @@ function AppContent() {
   const wonLeads = leads.filter(l => l.stage === 'closed_won').length;
   const winRate = totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0;
 
+  const healthScores = customers.map(c => effectiveHealth(c, tickets, activities, engagements).score);
   const avgHealthScore = customers.length > 0
-    ? Math.round(customers.reduce((sum, c) => sum + (Number(c.healthScore) || 0), 0) / customers.length)
+    ? Math.round(healthScores.reduce((sum, s) => sum + s, 0) / customers.length)
     : 0;
-  const atRiskCount = customers.filter(c => (Number(c.healthScore) || 0) < 60).length;
+  const atRiskCount = healthScores.filter(s => s < 60).length;
 
   const activeCampaigns = campaigns.filter(c => c.status === 'active');
   const nextCampaign = campaigns.find(c => c.startDate && new Date(c.startDate) > new Date());
@@ -119,6 +124,11 @@ function AppContent() {
   const thisMonthEng = engagements.filter(e => toMs(e.timestamp) >= thisMonthStart).length;
   const lastMonthEng = engagements.filter(e => { const ms = toMs(e.timestamp); return ms >= lastMonthStart && ms < thisMonthStart; }).length;
   const engagementDelta = lastMonthEng > 0 ? Math.round(((thisMonthEng - lastMonthEng) / lastMonthEng) * 100) : null;
+
+  // Brand-new org: no data in any collection yet. Show a guided first-run
+  // state on Overview instead of six empty bento cards.
+  const isEmptyOrg = leads.length === 0 && customers.length === 0 && tickets.length === 0
+    && campaigns.length === 0 && tasks.length === 0 && engagements.length === 0 && activities.length === 0;
 
   const formatCurrency = (n: number) =>
     n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(1)}M` :
@@ -364,7 +374,42 @@ function AppContent() {
                 transition={{ duration: 0.2 }}
                 className="h-full"
               >
-                {activeModule === 'overview' && (
+                {activeModule === 'overview' && isEmptyOrg && (
+                  <div className="h-full flex items-center justify-center">
+                    <div className="max-w-xl w-full space-y-8">
+                      <div className="space-y-2">
+                        <h1 className="text-4xl font-extrabold text-bento-text tracking-tighter">Welcome to Nexus 👋</h1>
+                        <p className="text-bento-muted font-medium text-lg">
+                          Your workspace is empty. Pick a starting point — everything you add shows up across every module instantly.
+                        </p>
+                      </div>
+                      <div className="space-y-3">
+                        {[
+                          { icon: TrendingUp, accent: 'text-accent-sales', bg: 'bg-[#dbeafe]', title: 'Add your first lead', desc: 'Start your pipeline — closing a deal creates a customer account automatically.', module: 'sales' as Module },
+                          { icon: LayoutDashboard, accent: 'text-accent-marketing', bg: 'bg-[#ede9fe]', title: 'Import leads from CSV', desc: 'Migrating from a spreadsheet? Bring your whole pipeline over in one step.', module: 'sales' as Module },
+                          { icon: MessageSquare, accent: 'text-accent-support', bg: 'bg-[#fef3c7]', title: 'Log a support ticket', desc: 'Track customer issues with a shared, chat-style activity thread.', module: 'support' as Module },
+                          ...(profile?.role === 'admin' ? [{ icon: ShieldCheck, accent: 'text-accent-cs', bg: 'bg-[#dcfce7]', title: 'Invite your team', desc: 'Add teammates with sales, support, marketing, or success roles.', module: 'admin' as Module }] : []),
+                        ].map((step) => (
+                          <button
+                            key={step.title}
+                            onClick={() => setActiveModule(step.module)}
+                            className="w-full dashboard-card flex-row items-center gap-4 text-left hover:border-bento-text/20 transition-all group"
+                          >
+                            <div className={`${step.bg} ${step.accent} w-11 h-11 rounded-xl flex items-center justify-center shrink-0`}>
+                              <step.icon className="w-[18px] h-[18px]" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-extrabold text-bento-text">{step.title}</p>
+                              <p className="text-sm text-bento-muted font-medium">{step.desc}</p>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-bento-border group-hover:text-bento-text transition-colors shrink-0" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {activeModule === 'overview' && !isEmptyOrg && (
                   <div className="bento-grid">
                     {/* SALES CARD */}
                     <section className="dashboard-card col-span-1 md:col-span-2 lg:row-span-2 justify-between">
@@ -416,7 +461,7 @@ function AppContent() {
                             <CheckCircleIcon className="w-6 h-6 mb-1 opacity-20" />
                             <p className="text-xs font-bold italic">No open tickets</p>
                           </div>
-                        ) : tickets.map((ticket) => (
+                        ) : tickets.slice(0, 5).map((ticket) => (
                           <div
                             key={ticket.id}
                             onClick={() => { setSelectedCustomerName(ticket.customerId); setActiveModule('success'); }}
@@ -487,12 +532,17 @@ function AppContent() {
                   </div>
                 )}
                 {activeModule === 'sales' && !selectedCustomerName && (
-                  <Sales onSelectCustomer={(name) => { setSelectedCustomerName(name); }} campaigns={campaigns} />
+                  <Sales onSelectCustomer={(name) => { setSelectedCustomerName(name); }} campaigns={campaigns} customers={customers} />
                 )}
                 {activeModule === 'support' && !selectedCustomerName && <Support />}
                 {activeModule === 'marketing' && !selectedCustomerName && <Marketing leads={leads} />}
                 {activeModule === 'success' && !selectedCustomerName && (
-                  <CustomerSuccess onSelectCustomer={(name) => { setSelectedCustomerName(name); }} />
+                  <CustomerSuccess
+                    onSelectCustomer={(name) => { setSelectedCustomerName(name); }}
+                    tickets={tickets}
+                    activities={activities}
+                    engagements={engagements}
+                  />
                 )}
                 {activeModule === 'admin' && !selectedCustomerName && <Admin />}
                 {selectedCustomerName && (

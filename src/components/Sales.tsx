@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   updateDoc,
-  getDocs,
-  where,
   orderBy,
-  query,
   onSnapshot,
+  writeBatch,
+  doc,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { addOrgDoc, orgQuery, orgCollection, orgDoc } from '../lib/firestoreWithOrg';
@@ -19,9 +18,14 @@ import {
   Filter,
   X,
   ClipboardList,
+  Upload,
+  Download,
+  AlertTriangle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { initials, avatarColors } from '../lib/avatar';
+import { parseCsv, validateLeadRows, toCsv, downloadCsv, RowResult } from '../lib/csv';
+import { findNameMatch } from '../lib/customerMatch';
 
 interface Lead {
   id: string;
@@ -46,6 +50,7 @@ interface Campaign {
 interface SalesProps {
   onSelectCustomer: (name: string) => void;
   campaigns: Campaign[];
+  customers: { name: string }[];
 }
 
 function computeLeadScore(lead: Partial<Lead>): number {
@@ -61,7 +66,7 @@ function computeLeadScore(lead: Partial<Lead>): number {
   return Math.min(100, stage + status + valuePoints);
 }
 
-export default function Sales({ onSelectCustomer, campaigns }: SalesProps) {
+export default function Sales({ onSelectCustomer, campaigns, customers }: SalesProps) {
   const { user, profile } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -72,6 +77,9 @@ export default function Sales({ onSelectCustomer, campaigns }: SalesProps) {
   const [newLead, setNewLead] = useState({ company: '', contactName: '', email: '', value: 0, campaignId: '' });
   const [creatingTaskFor, setCreatingTaskFor] = useState<Lead | null>(null);
   const [newTask, setNewTask] = useState({ title: '', priority: 'medium' as 'low' | 'medium' | 'high', dueDate: '' });
+  const [importRows, setImportRows] = useState<RowResult[] | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     if (!user || !profile?.orgId) return;
@@ -110,11 +118,9 @@ export default function Sales({ onSelectCustomer, campaigns }: SalesProps) {
       await updateDoc(orgDoc(profile.orgId, 'leads', leadId), { [field]: value, leadScore: computeLeadScore(updated) });
 
       if (field === 'stage' && value === 'closed_won' && lead) {
-        const existing = await getDocs(query(
-          orgCollection(profile.orgId, 'customers'),
-          where('name', '==', lead.company)
-        ));
-        if (existing.empty) {
+        // Normalized match so "Acme Inc." doesn't create a duplicate of "Acme Inc"
+        const match = findNameMatch(lead.company, customers.map(c => c.name));
+        if (!match) {
           const renewalDate = new Date();
           renewalDate.setFullYear(renewalDate.getFullYear() + 1);
           await addOrgDoc('customers', {
@@ -149,6 +155,64 @@ export default function Sales({ onSelectCustomer, campaigns }: SalesProps) {
     }
   };
 
+  const handleImportFile = async (file: File) => {
+    setImportError(null);
+    const text = await file.text();
+    const parsed = parseCsv(text);
+    if (parsed.headers.length === 0) {
+      setImportError('The file is empty.');
+      setImportRows([]);
+      return;
+    }
+    const { results, headerError } = validateLeadRows(parsed);
+    if (headerError) {
+      setImportError(headerError);
+      setImportRows([]);
+      return;
+    }
+    setImportRows(results);
+  };
+
+  const confirmImport = async () => {
+    if (!importRows || !profile?.orgId || !user) return;
+    const valid = importRows.filter(r => r.lead);
+    if (valid.length === 0) return;
+    setImporting(true);
+    try {
+      // Firestore batches cap at 500 writes; chunk to stay under it.
+      for (let i = 0; i < valid.length; i += 400) {
+        const batch = writeBatch(db);
+        for (const row of valid.slice(i, i + 400)) {
+          const ref = doc(orgCollection(profile.orgId, 'leads'));
+          batch.set(ref, {
+            ...row.lead,
+            leadScore: computeLeadScore(row.lead!),
+            ownerId: user.uid,
+            createdAt: new Date().toISOString(),
+            orgId: profile.orgId,
+          });
+        }
+        await batch.commit();
+      }
+      setImportRows(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'leads');
+      setImportError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleExport = () => {
+    downloadCsv(
+      `leads-${new Date().toISOString().slice(0, 10)}.csv`,
+      toCsv(
+        ['company', 'contactName', 'email', 'value', 'status', 'stage', 'leadScore', 'createdAt'],
+        leads.map(l => [l.company, l.contactName, l.email, l.value || 0, l.status, l.stage || 'discovery', computeLeadScore(l), l.createdAt || ''])
+      )
+    );
+  };
+
   const activeFilters = [filterStatus, filterStage].filter(Boolean).length;
 
   const filteredLeads = leads.filter(lead => {
@@ -180,9 +244,27 @@ export default function Sales({ onSelectCustomer, campaigns }: SalesProps) {
           <h2 className="text-3xl font-extrabold text-bento-text tracking-tighter">Sales Pipeline</h2>
           <p className="text-bento-muted font-medium">Manage your leads and track performance</p>
         </div>
-        <button onClick={() => setIsAdding(true)} className="btn-primary">
-          <Plus className="w-4 h-4" /> Add Lead
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={handleExport} className="btn-secondary" title="Export leads to CSV" disabled={leads.length === 0}>
+            <Download className="w-4 h-4" /> Export
+          </button>
+          <label className="btn-secondary cursor-pointer" title="Import leads from CSV">
+            <Upload className="w-4 h-4" /> Import
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleImportFile(file);
+                e.target.value = '';
+              }}
+            />
+          </label>
+          <button onClick={() => setIsAdding(true)} className="btn-primary">
+            <Plus className="w-4 h-4" /> Add Lead
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -372,6 +454,22 @@ export default function Sales({ onSelectCustomer, campaigns }: SalesProps) {
               <div className="space-y-2">
                 <label className="text-xs font-bold text-bento-muted uppercase tracking-widest">Company Name</label>
                 <input type="text" required className="w-full px-4 py-3 rounded-xl bg-bento-bg border border-bento-border focus:ring-2 focus:ring-accent-sales outline-none transition-all font-medium" value={newLead.company} onChange={e => setNewLead({ ...newLead, company: e.target.value })} />
+                {(() => {
+                  const match = findNameMatch(newLead.company, customers.map(c => c.name));
+                  if (match?.kind !== 'near') return null;
+                  return (
+                    <p className="text-[11px] font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      Existing account "{match.name}" is spelled differently — using this spelling would disconnect it from that account's history.{' '}
+                      <button
+                        type="button"
+                        onClick={() => setNewLead({ ...newLead, company: match.name })}
+                        className="underline underline-offset-2 hover:text-amber-800"
+                      >
+                        Use "{match.name}"
+                      </button>
+                    </p>
+                  );
+                })()}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -407,6 +505,61 @@ export default function Sales({ onSelectCustomer, campaigns }: SalesProps) {
                 <button type="submit" className="btn-primary flex-1">Save Lead</button>
               </div>
             </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* CSV Import Preview Modal */}
+      {(importRows !== null || importError) && (
+        <div className="fixed inset-0 bg-bento-text/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-[16px] p-8 max-w-2xl w-full shadow-2xl border border-bento-border space-y-5 max-h-[85vh] flex flex-col">
+            <div>
+              <h3 className="text-2xl font-extrabold text-bento-text tracking-tighter">Import Leads from CSV</h3>
+              {importRows && importRows.length > 0 && !importError && (
+                <p className="text-xs text-bento-muted font-bold uppercase tracking-widest mt-1">
+                  {importRows.filter(r => r.lead).length} valid · {importRows.filter(r => !r.lead).length} skipped
+                </p>
+              )}
+            </div>
+
+            {importError && (
+              <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                <p className="text-sm text-red-600 font-medium break-words">{importError}</p>
+              </div>
+            )}
+
+            {importRows && importRows.length > 0 && (
+              <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
+                {importRows.map(row => (
+                  <div key={row.line} className={`rounded-xl border px-4 py-2.5 ${row.lead ? 'border-bento-border bg-bento-bg' : 'border-red-200 bg-red-50'}`}>
+                    {row.lead ? (
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="font-bold text-bento-text truncate">{row.lead.company} — {row.lead.contactName}</span>
+                        <span className="text-xs text-bento-muted font-bold shrink-0">${row.lead.value.toLocaleString()} · {row.lead.stage}</span>
+                      </div>
+                    ) : (
+                      <div className="text-xs">
+                        <span className="font-black text-red-500 uppercase tracking-widest">Line {row.line} skipped</span>
+                        <p className="text-red-600 font-medium mt-0.5">{row.errors.join('; ')}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-4 pt-2">
+              <button type="button" onClick={() => { setImportRows(null); setImportError(null); }} className="btn-secondary flex-1" disabled={importing}>Cancel</button>
+              <button
+                type="button"
+                onClick={confirmImport}
+                disabled={importing || !importRows || importRows.filter(r => r.lead).length === 0}
+                className="btn-primary flex-1 disabled:opacity-50"
+              >
+                {importing ? 'Importing…' : `Import ${importRows ? importRows.filter(r => r.lead).length : 0} Leads`}
+              </button>
+            </div>
           </motion.div>
         </div>
       )}
