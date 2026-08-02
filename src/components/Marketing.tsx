@@ -119,22 +119,22 @@ export default function Marketing({ leads: allLeads }: MarketingProps) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="dashboard-card bg-[#ede9fe] text-accent-marketing">
-          <Mail className="w-8 h-8 mb-4 opacity-50" />
+          <Mail className="w-[22px] h-[22px] mb-3 opacity-65" />
           <h4 className="text-accent-marketing/60 text-[10px] font-extrabold uppercase tracking-widest mb-1">Email Campaigns</h4>
           <p className="text-3xl font-black">{campaigns.filter(c => c.type === 'email').length}</p>
         </div>
         <div className="dashboard-card bg-[#fef3c7] text-accent-support">
-          <Users className="w-8 h-8 mb-4 opacity-50" />
+          <Users className="w-[22px] h-[22px] mb-3 opacity-65" />
           <h4 className="text-accent-support/60 text-[10px] font-extrabold uppercase tracking-widest mb-1">Total Leads</h4>
           <p className="text-3xl font-black">{totalLeadsGenerated}</p>
         </div>
         <div className="dashboard-card bg-bento-text text-white">
-          <BarChart3 className="w-8 h-8 mb-4 opacity-50" />
+          <BarChart3 className="w-[22px] h-[22px] mb-3 opacity-65" />
           <h4 className="text-white/40 text-[10px] font-extrabold uppercase tracking-widest mb-1">Pipeline ROI</h4>
           <p className="text-3xl font-black">{realRoi}x</p>
         </div>
         <div className="dashboard-card bg-[#dcfce7] text-accent-cs">
-          <Target className="w-8 h-8 mb-4 opacity-50" />
+          <Target className="w-[22px] h-[22px] mb-3 opacity-65" />
           <h4 className="text-accent-cs/60 text-[10px] font-extrabold uppercase tracking-widest mb-1">Win Rate</h4>
           <p className="text-3xl font-black">{realConversion}%</p>
         </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import Sales from './components/Sales';
@@ -7,11 +7,11 @@ import Marketing from './components/Marketing';
 import CustomerSuccess from './components/CustomerSuccess';
 import CustomerDetail from './components/CustomerDetail';
 import Admin from './components/Admin';
-import { 
-  BarChart2, 
-  MessageSquare, 
-  TrendingUp, 
-  ShieldCheck, 
+import {
+  BarChart2,
+  MessageSquare,
+  TrendingUp,
+  ShieldCheck,
   LogOut,
   LayoutDashboard,
   ChevronRight,
@@ -24,9 +24,45 @@ import { runSeed } from './lib/seed';
 import { motion, AnimatePresence } from 'motion/react';
 
 type Module = 'overview' | 'sales' | 'support' | 'marketing' | 'success' | 'admin';
+type NavMode = 'desktop' | 'compact' | 'mobile';
+
+// Desktop (>=1024px): full sidebar with labels. Compact (640-1023px): icon-only
+// rail. Mobile (<640px): bottom tab bar instead of a side rail. Measured via
+// ResizeObserver on the app shell so it reflects actual rendered width (e.g.
+// embedded/split-screen contexts), not just the viewport.
+function useNavMode() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [mode, setMode] = useState<NavMode>('desktop');
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const pick = (w: number): NavMode => (w >= 1024 ? 'desktop' : w >= 640 ? 'compact' : 'mobile');
+    const ro = new ResizeObserver((entries) => {
+      setMode(pick(Math.round(entries[0].contentRect.width)));
+    });
+    ro.observe(el);
+    setMode(pick(el.getBoundingClientRect().width));
+    return () => ro.disconnect();
+  }, []);
+
+  return { rootRef: ref, mode };
+}
+
+const NAV_ACCENTS: Record<Module, { accent: string; accentBg: string }> = {
+  overview: { accent: 'text-bento-text', accentBg: 'bg-bento-bg' },
+  sales: { accent: 'text-accent-sales', accentBg: 'bg-[#dbeafe]' },
+  marketing: { accent: 'text-accent-marketing', accentBg: 'bg-[#ede9fe]' },
+  success: { accent: 'text-accent-cs', accentBg: 'bg-[#dcfce7]' },
+  support: { accent: 'text-accent-support', accentBg: 'bg-[#fef3c7]' },
+  admin: { accent: 'text-bento-text', accentBg: 'bg-bento-bg' },
+};
 
 function AppContent() {
   const { user, profile, loading, authError, login, logout, joinedOrgName, dismissJoinedOrgName } = useAuth();
+  const { rootRef, mode: navMode } = useNavMode();
+  const isDesktopNav = navMode === 'desktop';
+  const isMobileNav = navMode === 'mobile';
   const [activeModule, setActiveModule] = useState<Module>('overview');
   const [selectedCustomerName, setSelectedCustomerName] = useState<string | null>(null);
   const [tasks, setTasks] = useState<any[]>([]);
@@ -182,47 +218,66 @@ function AppContent() {
   ];
 
   return (
-    <div className="min-h-screen bg-bento-bg flex overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-20 lg:w-[240px] bg-white border-r border-bento-border flex flex-col h-screen shrink-0 p-6 gap-8">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl font-extrabold tracking-tighter text-bento-text uppercase">UNIFY.</span>
-        </div>
+    <div ref={rootRef} className="min-h-screen bg-bento-bg flex overflow-hidden">
+      {/* Desktop / Compact side rail (hidden on mobile) */}
+      {!isMobileNav && (
+        <aside
+          className={`bg-white border-r border-bento-border flex flex-col h-screen shrink-0 sticky top-0 gap-7 ${
+            isDesktopNav ? 'w-[232px] p-6' : 'w-[76px] p-3'
+          }`}
+        >
+          <div className={`flex items-center gap-2.5 ${isDesktopNav ? 'justify-start' : 'justify-center'}`}>
+            <div className="w-8 h-8 rounded-[9px] bg-bento-text shrink-0" />
+            {isDesktopNav && (
+              <span className="text-xl font-extrabold tracking-tighter text-bento-text uppercase">Nexus</span>
+            )}
+          </div>
 
-        <nav className="flex-1 space-y-1">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => {
-                setActiveModule(item.id as Module);
-                setSelectedCustomerName(null);
-              }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
-                activeModule === item.id 
-                  ? 'bg-gray-50 text-bento-text font-semibold' 
-                  : 'text-bento-muted hover:text-bento-text font-medium'
-              }`}
-            >
-              <item.icon className="w-5 h-5 shrink-0" />
-              <span className="hidden lg:block text-[14px]">{item.label}</span>
-            </button>
-          ))}
-        </nav>
+          <nav className="flex-1 flex flex-col gap-1">
+            {navItems.map((item) => {
+              const active = activeModule === item.id;
+              const { accent, accentBg } = NAV_ACCENTS[item.id as Module];
+              return (
+                <button
+                  key={item.id}
+                  title={item.label}
+                  onClick={() => {
+                    setActiveModule(item.id as Module);
+                    setSelectedCustomerName(null);
+                  }}
+                  className={`w-full flex items-center transition-all duration-150 ${
+                    isDesktopNav
+                      ? `gap-3 px-3.5 py-2.5 rounded-[10px] ${active ? 'bg-gray-50' : 'hover:bg-gray-50/60'}`
+                      : `justify-center py-3 rounded-xl ${active ? accentBg : 'hover:bg-gray-50'}`
+                  }`}
+                >
+                  <item.icon className={`w-5 h-5 shrink-0 ${active ? accent : 'text-bento-muted'}`} />
+                  {isDesktopNav && (
+                    <span className={`text-[14px] ${active ? 'font-bold text-bento-text' : 'font-semibold text-bento-muted'}`}>
+                      {item.label}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
 
-        <div className="mt-auto pt-6 border-t border-bento-border">
-          <div className="flex items-center gap-3">
-            <img 
-              src={profile?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`} 
-              alt="Avatar" 
+          <div className={`pt-5 border-t border-bento-border flex items-center gap-2.5 ${isDesktopNav ? 'justify-start' : 'justify-center'}`}>
+            <img
+              src={profile?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`}
+              alt="Avatar"
               className="w-10 h-10 rounded-xl bg-gray-100 shrink-0"
               referrerPolicy="no-referrer"
             />
-            <div className="hidden lg:block overflow-hidden">
-              <p className="text-[13px] font-bold text-bento-text truncate">{profile?.name || user.displayName}</p>
-              <p className="text-[11px] font-medium text-bento-muted uppercase truncate">{profile?.role || 'Member'}</p>
-            </div>
+            {isDesktopNav && (
+              <div className="overflow-hidden">
+                <p className="text-[13px] font-bold text-bento-text truncate">{profile?.name || user.displayName}</p>
+                <p className="text-[11px] font-medium text-bento-muted uppercase truncate">{profile?.role || 'Member'}</p>
+              </div>
+            )}
           </div>
-          {import.meta.env.DEV && profile?.role === 'admin' && (
+
+          {isDesktopNav && import.meta.env.DEV && profile?.role === 'admin' && (
             <div className="space-y-1">
               <button
                 onClick={async () => {
@@ -241,13 +296,13 @@ function AppContent() {
                   }
                 }}
                 disabled={seeding}
-                className="w-full mt-3 flex items-center gap-3 px-3 py-2 rounded-lg text-bento-muted hover:text-accent-marketing hover:bg-accent-marketing/5 transition-colors font-bold text-xs disabled:opacity-50"
+                className="w-full mt-1 flex items-center gap-3 px-3 py-2 rounded-lg text-bento-muted hover:text-accent-marketing hover:bg-accent-marketing/5 transition-colors font-bold text-xs disabled:opacity-50"
               >
                 <span className="text-base leading-none shrink-0">{seeding ? '⏳' : '🌱'}</span>
-                <span className="hidden lg:block truncate">{seeding ? 'Seeding…' : 'Seed Demo Data'}</span>
+                <span className="truncate">{seeding ? 'Seeding…' : 'Seed Demo Data'}</span>
               </button>
               {seedMessage && (
-                <p className={`hidden lg:block text-[10px] font-bold px-3 leading-tight break-words ${seedMessage.startsWith('✓') ? 'text-green-600' : 'text-red-500'}`}>
+                <p className={`text-[10px] font-bold px-3 leading-tight break-words ${seedMessage.startsWith('✓') ? 'text-green-600' : 'text-red-500'}`}>
                   {seedMessage}
                 </p>
               )}
@@ -255,17 +310,34 @@ function AppContent() {
           )}
           <button
             onClick={logout}
-            className="w-full mt-4 flex items-center gap-3 px-3 py-2 rounded-lg text-bento-muted hover:text-red-500 hover:bg-red-50 transition-colors font-bold text-xs"
+            className={`w-full flex items-center gap-3 rounded-lg text-bento-muted hover:text-red-500 hover:bg-red-50 transition-colors font-bold text-xs ${
+              isDesktopNav ? 'px-3 py-2' : 'justify-center py-2'
+            }`}
           >
-            <LogOut className="w-4 h-4" />
-            <span className="hidden lg:block">Sign Out</span>
+            <LogOut className="w-4 h-4 shrink-0" />
+            {isDesktopNav && <span>Sign Out</span>}
           </button>
-        </div>
-      </aside>
+        </aside>
+      )}
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        <div className="p-6 h-full overflow-y-auto">
+        {/* Mobile top bar */}
+        {isMobileNav && (
+          <div className="h-14 shrink-0 flex items-center justify-between px-4 bg-white border-b border-bento-border">
+            <div className="flex items-center gap-2.5">
+              <div className="w-[26px] h-[26px] rounded-[7px] bg-bento-text" />
+              <span className="text-base font-extrabold tracking-tighter uppercase text-bento-text">Nexus</span>
+            </div>
+            <img
+              src={profile?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`}
+              alt="Avatar"
+              className="w-8 h-8 rounded-[10px] bg-gray-100 shrink-0"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+        )}
+        <div className={`h-full overflow-y-auto ${isMobileNav ? 'p-4 pb-24' : 'p-6'}`}>
             {joinedOrgName && (
               <motion.div
                 initial={{ opacity: 0, y: -8 }}
@@ -433,6 +505,29 @@ function AppContent() {
             </AnimatePresence>
         </div>
       </main>
+
+      {/* Mobile bottom tab bar */}
+      {isMobileNav && (
+        <nav className="fixed left-0 right-0 bottom-0 h-16 bg-white border-t border-bento-border flex z-20">
+          {navItems.map((item) => {
+            const active = activeModule === item.id;
+            const { accent } = NAV_ACCENTS[item.id as Module];
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveModule(item.id as Module);
+                  setSelectedCustomerName(null);
+                }}
+                className="flex-1 flex flex-col items-center justify-center gap-1"
+              >
+                <item.icon className={`w-5 h-5 ${active ? accent : 'text-bento-muted'}`} />
+                <span className={`text-[10px] font-bold ${active ? accent : 'text-bento-muted'}`}>{item.label.split(' ')[0]}</span>
+              </button>
+            );
+          })}
+        </nav>
+      )}
     </div>
   );
 }

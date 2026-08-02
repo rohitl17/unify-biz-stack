@@ -12,12 +12,12 @@ import {
   Search,
   ShieldCheck,
   Calendar,
-  Building,
   ArrowUpRight,
   ClipboardList,
   Check,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { initials, avatarColors } from '../lib/avatar';
 
 interface Customer {
   id: string;
@@ -182,8 +182,11 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
                     className="flex items-center gap-4 flex-1 min-w-0"
                     onClick={() => onSelectCustomer(cust.name)}
                   >
-                    <div className="w-12 h-12 rounded-xl bg-bento-bg flex items-center justify-center border border-bento-border group-hover:bg-white transition-colors shrink-0">
-                      <Building className="w-6 h-6 text-bento-text" />
+                    <div
+                      className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 font-extrabold text-sm"
+                      style={{ background: avatarColors(i).bg, color: avatarColors(i).fg }}
+                    >
+                      {initials(cust.name)}
                     </div>
                     <div className="min-w-0">
                       <h4 className="font-extrabold text-bento-text text-lg tracking-tight leading-tight truncate">{cust.name}</h4>

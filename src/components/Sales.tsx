@@ -21,6 +21,7 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { initials, avatarColors } from '../lib/avatar';
 
 interface Lead {
   id: string;
@@ -186,11 +187,11 @@ export default function Sales({ onSelectCustomer, campaigns }: SalesProps) {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {stats.map((stat, i) => (
-          <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="dashboard-card flex-row items-center gap-4">
-            <div className={`${stat.bg} ${stat.color} p-4 rounded-xl shrink-0`}><stat.icon className="w-6 h-6" /></div>
+          <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="dashboard-card flex-row items-center gap-3.5">
+            <div className={`${stat.bg} ${stat.color} w-11 h-11 rounded-xl flex items-center justify-center shrink-0`}><stat.icon className="w-[18px] h-[18px]" /></div>
             <div>
-              <p className="text-[12px] font-bold text-bento-muted uppercase tracking-wider">{stat.label}</p>
-              <p className="text-2xl font-extrabold text-bento-text">{stat.value}</p>
+              <p className="text-[11px] font-bold text-bento-muted uppercase tracking-wider">{stat.label}</p>
+              <p className="text-xl font-extrabold text-bento-text">{stat.value}</p>
             </div>
           </motion.div>
         ))}
@@ -282,12 +283,15 @@ export default function Sales({ onSelectCustomer, campaigns }: SalesProps) {
                 className="dashboard-card group hover:border-bento-text/20 transition-all cursor-pointer"
               >
                 <div className="flex justify-between items-start mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-bento-bg flex items-center justify-center border border-bento-border group-hover:bg-accent-sales/5 transition-colors">
-                      <Users className="w-5 h-5 text-accent-sales" />
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className="w-10 h-10 rounded-[11px] flex items-center justify-center shrink-0 font-extrabold text-[13px]"
+                      style={{ background: avatarColors(i).bg, color: avatarColors(i).fg }}
+                    >
+                      {initials(lead.company)}
                     </div>
-                    <div>
-                      <h4 className="font-extrabold text-bento-text leading-tight tracking-tight">{lead.company}</h4>
+                    <div className="min-w-0">
+                      <h4 className="font-extrabold text-bento-text leading-tight tracking-tight truncate">{lead.company}</h4>
                       <div className="flex items-center gap-2 mt-0.5">
                         <p className="text-[10px] text-bento-muted font-bold uppercase tracking-widest">{lead.contactName}</p>
                         <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${getScoreColor(computeLeadScore(lead))}`}>
