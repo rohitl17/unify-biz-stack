@@ -6,31 +6,27 @@ import Support from './components/Support';
 import Marketing from './components/Marketing';
 import CustomerSuccess from './components/CustomerSuccess';
 import CustomerDetail from './components/CustomerDetail';
+import Admin from './components/Admin';
 import { 
-  Building2, 
   BarChart2, 
   MessageSquare, 
   TrendingUp, 
   ShieldCheck, 
   LogOut,
   LayoutDashboard,
-  Bell,
-  Search,
   ChevronRight,
-  Clock as ClockIcon,
   CheckCircle2 as CheckCircleIcon,
-  Plus as PlusIcon
+  Settings
 } from 'lucide-react';
 import { onSnapshot, orderBy, limit, where } from 'firebase/firestore';
-import { db } from './lib/firebase';
 import { orgQuery } from './lib/firestoreWithOrg';
 import { runSeed } from './lib/seed';
 import { motion, AnimatePresence } from 'motion/react';
 
-type Module = 'overview' | 'sales' | 'support' | 'marketing' | 'success';
+type Module = 'overview' | 'sales' | 'support' | 'marketing' | 'success' | 'admin';
 
 function AppContent() {
-  const { user, profile, loading, authError, login, logout } = useAuth();
+  const { user, profile, loading, authError, login, logout, joinedOrgName, dismissJoinedOrgName } = useAuth();
   const [activeModule, setActiveModule] = useState<Module>('overview');
   const [selectedCustomerName, setSelectedCustomerName] = useState<string | null>(null);
   const [tasks, setTasks] = useState<any[]>([]);
@@ -182,6 +178,7 @@ function AppContent() {
     { id: 'marketing', label: 'Marketing Hub', icon: BarChart2 },
     { id: 'success', label: 'Customer Success', icon: ShieldCheck },
     { id: 'support', label: 'Support Inbox', icon: MessageSquare },
+    ...(profile?.role === 'admin' ? [{ id: 'admin', label: 'Admin', icon: Settings }] : []),
   ];
 
   return (
@@ -225,7 +222,7 @@ function AppContent() {
               <p className="text-[11px] font-medium text-bento-muted uppercase truncate">{profile?.role || 'Member'}</p>
             </div>
           </div>
-          {import.meta.env.DEV && (
+          {import.meta.env.DEV && profile?.role === 'admin' && (
             <div className="space-y-1">
               <button
                 onClick={async () => {
@@ -269,6 +266,23 @@ function AppContent() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
         <div className="p-6 h-full overflow-y-auto">
+            {joinedOrgName && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-4 flex items-center justify-between gap-4 bg-accent-cs/10 border border-accent-cs/30 text-bento-text rounded-xl px-4 py-3"
+              >
+                <p className="text-sm font-bold">
+                  You've joined <span className="font-extrabold">{joinedOrgName}</span> as {profile?.role || 'a member'}.
+                </p>
+                <button
+                  onClick={dismissJoinedOrgName}
+                  className="text-xs font-bold text-bento-muted hover:text-bento-text uppercase tracking-wide"
+                >
+                  Dismiss
+                </button>
+              </motion.div>
+            )}
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeModule}
@@ -408,6 +422,7 @@ function AppContent() {
                 {activeModule === 'success' && !selectedCustomerName && (
                   <CustomerSuccess onSelectCustomer={(name) => { setSelectedCustomerName(name); }} />
                 )}
+                {activeModule === 'admin' && !selectedCustomerName && <Admin />}
                 {selectedCustomerName && (
                   <CustomerDetail 
                     customerName={selectedCustomerName} 
@@ -429,4 +444,3 @@ export default function App() {
     </ErrorBoundary>
   );
 }
-

@@ -3,14 +3,12 @@ import {
   query,
   onSnapshot,
   updateDoc,
-  doc,
   orderBy,
   where,
   limit,
-  collection,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { addOrgDoc, orgQuery } from '../lib/firestoreWithOrg';
+import { addOrgDoc, orgQuery, orgCollection, orgDoc } from '../lib/firestoreWithOrg';
 import { useAuth } from '../hooks/useAuth';
 import {
   MessageSquare,
@@ -72,8 +70,7 @@ export default function Support() {
   useEffect(() => {
     if (!threadTicket || !profile?.orgId) { setThreadActivities([]); return; }
     const q = query(
-      collection(db, 'activities'),
-      where('orgId', '==', profile.orgId),
+      orgCollection(profile.orgId, 'activities'),
       where('customerId', '==', threadTicket.customerId),
       orderBy('createdAt', 'asc'),
       limit(50)
@@ -81,7 +78,7 @@ export default function Support() {
     const unsub = onSnapshot(q, (snap) => {
       setThreadActivities(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }, () => {
-      const fallback = query(collection(db, 'activities'), where('orgId', '==', profile.orgId), where('customerId', '==', threadTicket.customerId));
+      const fallback = query(orgCollection(profile.orgId, 'activities'), where('customerId', '==', threadTicket.customerId));
       onSnapshot(fallback, (snap) => setThreadActivities(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     });
     return () => unsub();
@@ -105,8 +102,9 @@ export default function Support() {
   };
 
   const updateStatus = async (ticketId: string, status: Ticket['status']) => {
+    if (!profile?.orgId) return;
     try {
-      await updateDoc(doc(db, 'tickets', ticketId), { status });
+      await updateDoc(orgDoc(profile.orgId, 'tickets', ticketId), { status });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `tickets/${ticketId}`);
     }

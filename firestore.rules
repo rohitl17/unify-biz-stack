@@ -8,20 +8,27 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function currentUser() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-    }
-
-    function isOrgMember(orgId) {
-      return isAuthenticated() && currentUser().orgId == orgId;
-    }
-
-    function isOrgAdmin(orgId) {
-      return isOrgMember(orgId) && currentUser().role == 'admin';
-    }
-
     function isSelf(userId) {
       return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function memberDoc(orgId) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data;
+    }
+
+    function isMember(orgId) {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)) &&
+             memberDoc(orgId).status != 'disabled';
+    }
+
+    function isAdmin(orgId) {
+      return isMember(orgId) && memberDoc(orgId).role == 'admin';
+    }
+
+    function isOrgOwner(orgId) {
+      return isAuthenticated() &&
+             get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerId == request.auth.uid;
     }
 
     function isValidUser(data) {
@@ -29,6 +36,14 @@ service cloud.firestore {
              data.uid is string &&
              data.email is string &&
              data.orgId is string &&
+             data.role in ['admin', 'sales', 'support', 'success', 'marketing'];
+    }
+
+    function isValidMember(data) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'status']) &&
+             data.uid is string &&
+             data.email is string &&
+             data.status in ['active', 'disabled'] &&
              data.role in ['admin', 'sales', 'support', 'success', 'marketing'];
     }
 
@@ -41,86 +56,124 @@ service cloud.firestore {
              data.orgId is string;
     }
 
-    function writingToOwnOrg(data) {
-      return isAuthenticated() && data.orgId == currentUser().orgId;
-    }
-
-    // ── Users ────────────────────────────────────────────────────────────────
+    // ── Users (uid -> default org lookup) ───────────────────────────────────
 
     match /users/{userId} {
       allow read: if isAuthenticated();
       allow create: if isSelf(userId) && isValidUser(request.resource.data);
-      allow update: if (isSelf(userId) || isOrgAdmin(resource.data.orgId)) && isValidUser(request.resource.data);
+      allow update: if (isSelf(userId) || isAdmin(resource.data.orgId)) && isValidUser(request.resource.data);
     }
 
     // ── Organizations ────────────────────────────────────────────────────────
 
     match /organizations/{orgId} {
-      allow read: if isOrgMember(orgId);
+      // Members can read; the owner can always read their own org doc too
+      // (needed to bootstrap membership before a members/ doc exists yet).
+      allow read: if isMember(orgId) || isOrgOwner(orgId);
       allow create: if isAuthenticated();
-      allow update: if isOrgAdmin(orgId);
-    }
+      allow update: if isAdmin(orgId);
 
-    // ── Leads ────────────────────────────────────────────────────────────────
+      // ── Members ──────────────────────────────────────────────────────────
 
-    match /leads/{leadId} {
-      allow read: if isOrgMember(resource.data.orgId);
-      allow create: if writingToOwnOrg(request.resource.data) && isValidLead(request.resource.data);
-      allow update: if isOrgMember(resource.data.orgId) && isValidLead(request.resource.data);
-      allow delete: if isOrgAdmin(resource.data.orgId);
-    }
+      match /members/{memberId} {
+        // A user can always read their own membership doc (needed to bootstrap
+        // isMember() itself — otherwise checking membership before the doc
+        // exists is a circular permission-denied). Reading anyone else's
+        // requires already being a member.
+        allow read: if isSelf(memberId) || isMember(orgId);
+        // A user may create their own membership doc only if they were invited
+        // (a matching pending invite for their email exists) or the org has no
+        // members yet (first user / org creator).
+        allow create: if isAuthenticated() && isSelf(memberId) &&
+                       isValidMember(request.resource.data) &&
+                       request.resource.data.uid == request.auth.uid;
+        allow update: if isAdmin(orgId) ||
+                       (isSelf(memberId) && request.resource.data.diff(resource.data).affectedKeys()
+                          .hasOnly(['name', 'photoURL'])) ||
+                       // Org owner self-heal: recover admin access if it was lost
+                       // (e.g. a stale membership doc from a prior data model).
+                       (isSelf(memberId) && isOrgOwner(orgId) &&
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role']) &&
+                        request.resource.data.role == 'admin');
+        allow delete: if isAdmin(orgId);
+      }
 
-    // ── Tickets ──────────────────────────────────────────────────────────────
+      // ── Invites ──────────────────────────────────────────────────────────
 
-    match /tickets/{ticketId} {
-      allow read: if isOrgMember(resource.data.orgId);
-      allow create: if writingToOwnOrg(request.resource.data);
-      allow update: if isOrgMember(resource.data.orgId);
-      allow delete: if isOrgAdmin(resource.data.orgId);
-    }
+      match /invites/{inviteId} {
+        allow read: if isMember(orgId) ||
+                     (isAuthenticated() && resource.data.email == request.auth.token.email);
+        allow create: if isAdmin(orgId);
+        // Admins manage invites; an invited user may only flip their own
+        // invite to accepted once they join.
+        allow update: if isAdmin(orgId) ||
+                       (isAuthenticated() && resource.data.email == request.auth.token.email &&
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedAt']) &&
+                        request.resource.data.status == 'accepted');
+        allow delete: if isAdmin(orgId);
+      }
 
-    // ── Campaigns ────────────────────────────────────────────────────────────
+      // ── Leads ────────────────────────────────────────────────────────────
 
-    match /campaigns/{campaignId} {
-      allow read: if isOrgMember(resource.data.orgId);
-      allow create: if writingToOwnOrg(request.resource.data);
-      allow update: if isOrgMember(resource.data.orgId);
-      allow delete: if isOrgAdmin(resource.data.orgId);
-    }
+      match /leads/{leadId} {
+        allow read: if isMember(orgId);
+        allow create: if isMember(orgId) && isValidLead(request.resource.data);
+        allow update: if isMember(orgId) && isValidLead(request.resource.data);
+        allow delete: if isAdmin(orgId);
+      }
 
-    // ── Customers ────────────────────────────────────────────────────────────
+      // ── Tickets ──────────────────────────────────────────────────────────
 
-    match /customers/{customerId} {
-      allow read: if isOrgMember(resource.data.orgId);
-      allow create: if writingToOwnOrg(request.resource.data);
-      allow update: if isOrgMember(resource.data.orgId);
-      allow delete: if isOrgAdmin(resource.data.orgId);
-    }
+      match /tickets/{ticketId} {
+        allow read: if isMember(orgId);
+        allow create: if isMember(orgId);
+        allow update: if isMember(orgId);
+        allow delete: if isAdmin(orgId);
+      }
 
-    // ── Marketing Engagement ─────────────────────────────────────────────────
+      // ── Campaigns ────────────────────────────────────────────────────────
 
-    match /marketingEngagement/{engagementId} {
-      allow read: if isOrgMember(resource.data.orgId);
-      allow create: if writingToOwnOrg(request.resource.data);
-      allow update: if isOrgMember(resource.data.orgId);
-      allow delete: if isOrgAdmin(resource.data.orgId);
-    }
+      match /campaigns/{campaignId} {
+        allow read: if isMember(orgId);
+        allow create: if isMember(orgId);
+        allow update: if isMember(orgId);
+        allow delete: if isAdmin(orgId);
+      }
 
-    // ── Activities ───────────────────────────────────────────────────────────
+      // ── Customers ────────────────────────────────────────────────────────
 
-    match /activities/{activityId} {
-      allow read: if isOrgMember(resource.data.orgId);
-      allow create: if writingToOwnOrg(request.resource.data);
-      allow update, delete: if isOrgAdmin(resource.data.orgId);
-    }
+      match /customers/{customerId} {
+        allow read: if isMember(orgId);
+        allow create: if isMember(orgId);
+        allow update: if isMember(orgId);
+        allow delete: if isAdmin(orgId);
+      }
 
-    // ── Tasks ────────────────────────────────────────────────────────────────
+      // ── Marketing Engagement ─────────────────────────────────────────────
 
-    match /tasks/{taskId} {
-      allow read: if isOrgMember(resource.data.orgId);
-      allow create: if writingToOwnOrg(request.resource.data);
-      allow update: if isOrgMember(resource.data.orgId);
-      allow delete: if isOrgAdmin(resource.data.orgId);
+      match /marketingEngagement/{engagementId} {
+        allow read: if isMember(orgId);
+        allow create: if isMember(orgId);
+        allow update: if isMember(orgId);
+        allow delete: if isAdmin(orgId);
+      }
+
+      // ── Activities ───────────────────────────────────────────────────────
+
+      match /activities/{activityId} {
+        allow read: if isMember(orgId);
+        allow create: if isMember(orgId);
+        allow update, delete: if isAdmin(orgId);
+      }
+
+      // ── Tasks ────────────────────────────────────────────────────────────
+
+      match /tasks/{taskId} {
+        allow read: if isMember(orgId);
+        allow create: if isMember(orgId);
+        allow update: if isMember(orgId);
+        allow delete: if isAdmin(orgId);
+      }
     }
   }
 }

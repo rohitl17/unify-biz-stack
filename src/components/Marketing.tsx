@@ -2,11 +2,10 @@ import React, { useState, useEffect } from 'react';
 import {
   onSnapshot,
   updateDoc,
-  doc,
   orderBy,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { addOrgDoc, orgQuery } from '../lib/firestoreWithOrg';
+import { addOrgDoc, orgQuery, orgDoc } from '../lib/firestoreWithOrg';
 import { useAuth } from '../hooks/useAuth';
 import {
   Plus,
@@ -90,8 +89,9 @@ export default function Marketing({ leads: allLeads }: MarketingProps) {
   };
 
   const updateCampaignStatus = async (campId: string, newStatus: Campaign['status']) => {
+    if (!profile?.orgId) return;
     try {
-      await updateDoc(doc(db, 'campaigns', campId), { status: newStatus });
+      await updateDoc(orgDoc(profile.orgId, 'campaigns', campId), { status: newStatus });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `campaigns/${campId}`);
     }

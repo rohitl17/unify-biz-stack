@@ -1,13 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
-  collection,
-  query,
   onSnapshot,
   updateDoc,
-  doc,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { addOrgDoc, orgQuery } from '../lib/firestoreWithOrg';
+import { addOrgDoc, orgQuery, orgDoc } from '../lib/firestoreWithOrg';
 import { useAuth } from '../hooks/useAuth';
 import {
   Heart,
@@ -74,10 +71,11 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
   };
 
   const saveHealthScore = async (custId: string) => {
+    if (!profile?.orgId) return;
     const val = Math.min(100, Math.max(0, Number(editingScoreValue)));
     if (isNaN(val)) { setEditingScoreFor(null); return; }
     try {
-      await updateDoc(doc(db, 'customers', custId), { healthScore: val });
+      await updateDoc(orgDoc(profile.orgId, 'customers', custId), { healthScore: val });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `customers/${custId}`);
     }
@@ -85,8 +83,9 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
   };
 
   const savePlan = async (custId: string, newPlan: Customer['plan']) => {
+    if (!profile?.orgId) return;
     try {
-      await updateDoc(doc(db, 'customers', custId), { plan: newPlan });
+      await updateDoc(orgDoc(profile.orgId, 'customers', custId), { plan: newPlan });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `customers/${custId}`);
     }
@@ -94,9 +93,10 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
   };
 
   const saveRenewalDate = async (custId: string) => {
+    if (!profile?.orgId) return;
     if (!editingRenewalValue) { setEditingRenewalFor(null); return; }
     try {
-      await updateDoc(doc(db, 'customers', custId), { renewalDate: new Date(editingRenewalValue).toISOString() });
+      await updateDoc(orgDoc(profile.orgId, 'customers', custId), { renewalDate: new Date(editingRenewalValue).toISOString() });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `customers/${custId}`);
     }

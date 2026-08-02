@@ -1,16 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
   updateDoc,
-  doc,
   getDocs,
   where,
   orderBy,
   query,
-  collection,
   onSnapshot,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { addOrgDoc, orgQuery } from '../lib/firestoreWithOrg';
+import { addOrgDoc, orgQuery, orgCollection, orgDoc } from '../lib/firestoreWithOrg';
 import { useAuth } from '../hooks/useAuth';
 import {
   Users,
@@ -108,12 +106,11 @@ export default function Sales({ onSelectCustomer, campaigns }: SalesProps) {
     try {
       const lead = leads.find(l => l.id === leadId);
       const updated = { ...(lead || {}), [field]: value };
-      await updateDoc(doc(db, 'leads', leadId), { [field]: value, leadScore: computeLeadScore(updated) });
+      await updateDoc(orgDoc(profile.orgId, 'leads', leadId), { [field]: value, leadScore: computeLeadScore(updated) });
 
       if (field === 'stage' && value === 'closed_won' && lead) {
         const existing = await getDocs(query(
-          collection(db, 'customers'),
-          where('orgId', '==', profile.orgId),
+          orgCollection(profile.orgId, 'customers'),
           where('name', '==', lead.company)
         ));
         if (existing.empty) {

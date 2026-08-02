@@ -1,5 +1,5 @@
-import { collection, addDoc, getDocs, deleteDoc, doc, query, where } from 'firebase/firestore';
-import { db } from './firebase';
+import { addDoc, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import { orgCollection } from './firestoreWithOrg';
 
 const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -19,12 +19,12 @@ const CONTACTS = [
 ];
 
 async function clearCol(name: string, orgId: string) {
-  const snap = await getDocs(query(collection(db, name), where('orgId', '==', orgId)));
-  await Promise.all(snap.docs.map(d => deleteDoc(doc(db, name, d.id))));
+  const snap = await getDocs(orgCollection(orgId, name));
+  await Promise.all(snap.docs.map(d => deleteDoc(doc(orgCollection(orgId, name), d.id))));
 }
 
-async function seedCol(name: string, docs: object[]) {
-  await Promise.all(docs.map(d => addDoc(collection(db, name), d)));
+async function seedCol(name: string, docs: object[], orgId: string) {
+  await Promise.all(docs.map(d => addDoc(orgCollection(orgId, name), d)));
 }
 
 export async function runSeed(uid: string, orgId: string): Promise<string> {
@@ -165,13 +165,13 @@ export async function runSeed(uid: string, orgId: string): Promise<string> {
     }
   });
 
-  await seedCol('customers', customers);
-  await seedCol('leads', leads);
-  await seedCol('tickets', tickets);
-  await seedCol('campaigns', campaigns);
-  await seedCol('activities', activities);
-  await seedCol('tasks', tasks);
-  await seedCol('marketingEngagement', engagements);
+  await seedCol('customers', customers, orgId);
+  await seedCol('leads', leads, orgId);
+  await seedCol('tickets', tickets, orgId);
+  await seedCol('campaigns', campaigns, orgId);
+  await seedCol('activities', activities, orgId);
+  await seedCol('tasks', tasks, orgId);
+  await seedCol('marketingEngagement', engagements, orgId);
 
   return `Seeded: ${customers.length} customers, ${leads.length} leads, ${tickets.length} tickets, ${campaigns.length} campaigns, ${activities.length} activities, ${tasks.length} tasks, ${engagements.length} engagements`;
 }

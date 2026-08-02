@@ -1,10 +1,18 @@
-import { collection, addDoc, query, where, QueryConstraint } from 'firebase/firestore';
+import { collection, addDoc, query, doc, QueryConstraint } from 'firebase/firestore';
 import { db } from './firebase';
 
 export async function addOrgDoc(col: string, data: object, orgId: string) {
-  return addDoc(collection(db, col), { ...data, orgId });
+  return addDoc(orgCollection(orgId, col), { ...data, orgId });
 }
 
 export function orgQuery(col: string, orgId: string, ...constraints: QueryConstraint[]) {
-  return query(collection(db, col), where('orgId', '==', orgId), ...constraints);
+  return query(orgCollection(orgId, col), ...constraints);
+}
+
+export function orgCollection(orgId: string, col: string) {
+  return collection(db, 'organizations', orgId, col);
+}
+
+export function orgDoc(orgId: string, col: string, id: string) {
+  return doc(db, 'organizations', orgId, col, id);
 }
