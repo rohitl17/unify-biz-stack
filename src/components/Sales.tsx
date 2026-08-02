@@ -51,6 +51,14 @@ interface SalesProps {
   onSelectCustomer: (name: string) => void;
   campaigns: Campaign[];
   customers: { name: string }[];
+  searchQuery: string;
+  setSearchQuery: (v: string) => void;
+  showFilter: boolean;
+  setShowFilter: (v: boolean | ((prev: boolean) => boolean)) => void;
+  filterStatus: string;
+  setFilterStatus: (v: string) => void;
+  filterStage: string;
+  setFilterStage: (v: string) => void;
 }
 
 function computeLeadScore(lead: Partial<Lead>): number {
@@ -66,13 +74,12 @@ function computeLeadScore(lead: Partial<Lead>): number {
   return Math.min(100, stage + status + valuePoints);
 }
 
-export default function Sales({ onSelectCustomer, campaigns, customers }: SalesProps) {
+export default function Sales({
+  onSelectCustomer, campaigns, customers,
+  searchQuery, setSearchQuery, showFilter, setShowFilter, filterStatus, setFilterStatus, filterStage, setFilterStage,
+}: SalesProps) {
   const { user, profile } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showFilter, setShowFilter] = useState(false);
-  const [filterStatus, setFilterStatus] = useState('');
-  const [filterStage, setFilterStage] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [newLead, setNewLead] = useState({ company: '', contactName: '', email: '', value: 0, campaignId: '' });
   const [creatingTaskFor, setCreatingTaskFor] = useState<Lead | null>(null);
@@ -80,6 +87,8 @@ export default function Sales({ onSelectCustomer, campaigns, customers }: SalesP
   const [importRows, setImportRows] = useState<RowResult[] | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const PAGE_SIZE = 30;
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   useEffect(() => {
     if (!user || !profile?.orgId) return;
@@ -225,6 +234,14 @@ export default function Sales({ onSelectCustomer, campaigns, customers }: SalesP
     return matchesSearch && matchesStatus && matchesStage;
   });
 
+  // Reset the render window whenever the filtered set changes shape, so a
+  // narrowed search doesn't leave the page stuck on a stale "Load more" state.
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [searchQuery, filterStatus, filterStage]);
+
+  const visibleLeads = filteredLeads.slice(0, visibleCount);
+
   const stats = [
     { label: 'Active Leads', value: leads.length, icon: Users, color: 'text-accent-sales', bg: 'bg-[#dbeafe]' },
     { label: 'Avg Lead Score', value: leads.length > 0 ? Math.round(leads.reduce((acc, l) => acc + computeLeadScore(l), 0) / leads.length) : 0, icon: CheckCircle2, color: 'text-accent-cs', bg: 'bg-[#dcfce7]' },
@@ -354,7 +371,7 @@ export default function Sales({ onSelectCustomer, campaigns, customers }: SalesP
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           <AnimatePresence>
-            {filteredLeads.map((lead, i) => (
+            {visibleLeads.map((lead, i) => (
               <motion.div
                 key={lead.id}
                 layout
@@ -443,6 +460,20 @@ export default function Sales({ onSelectCustomer, campaigns, customers }: SalesP
             ))}
           </AnimatePresence>
         </div>
+
+        {filteredLeads.length > visibleLeads.length && (
+          <div className="flex flex-col items-center gap-2 pt-2">
+            <p className="text-[11px] text-bento-muted font-bold">
+              Showing {visibleLeads.length} of {filteredLeads.length} leads
+            </p>
+            <button
+              onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
+              className="btn-secondary"
+            >
+              Load more
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Add Lead Modal */}

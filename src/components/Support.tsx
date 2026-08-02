@@ -22,6 +22,8 @@ import {
   StickyNote,
   PhoneCall,
   ClipboardList,
+  Search,
+  Filter,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -36,7 +38,20 @@ interface Ticket {
   createdAt: string;
 }
 
-export default function Support() {
+interface SupportProps {
+  searchQuery: string;
+  setSearchQuery: (v: string) => void;
+  showFilter: boolean;
+  setShowFilter: (v: boolean | ((prev: boolean) => boolean)) => void;
+  priorityFilter: string;
+  setPriorityFilter: (v: string) => void;
+  statusFilter: string;
+  setStatusFilter: (v: string) => void;
+}
+
+export default function Support({
+  searchQuery, setSearchQuery, showFilter, setShowFilter, priorityFilter, setPriorityFilter, statusFilter, setStatusFilter,
+}: SupportProps) {
   const { user, profile } = useAuth();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
@@ -151,6 +166,20 @@ export default function Support() {
     { label: 'Resolved', value: tickets.filter(t => t.status === 'resolved').length, icon: CheckCircle, color: 'text-accent-cs', bg: 'bg-[#dcfce7]' },
   ];
 
+  const activeFilters = [priorityFilter, statusFilter].filter(Boolean).length;
+
+  const filteredTickets = tickets.filter(ticket => {
+    const q = searchQuery.toLowerCase();
+    const matchesSearch = !q ||
+      ticket.subject.toLowerCase().includes(q) ||
+      ticket.description.toLowerCase().includes(q) ||
+      (ticket.customerId || '').toLowerCase().includes(q) ||
+      (ticket.assignedTo || '').toLowerCase().includes(q);
+    const matchesPriority = !priorityFilter || ticket.priority === priorityFilter;
+    const matchesStatus = !statusFilter || ticket.status === statusFilter;
+    return matchesSearch && matchesPriority && matchesStatus;
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -175,9 +204,81 @@ export default function Support() {
         ))}
       </div>
 
+      <div className="space-y-3">
+        <div className="flex items-center gap-4 px-1">
+          <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-bento-border flex-1 text-sm">
+            <Search className="w-4 h-4 text-bento-muted" />
+            <input
+              type="text"
+              placeholder="Search tickets..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-transparent border-none outline-none w-full font-bold text-sm text-bento-text placeholder:text-bento-muted/50"
+            />
+          </div>
+          <button
+            onClick={() => setShowFilter(f => !f)}
+            className={`btn-secondary h-11 px-5 relative ${activeFilters > 0 ? 'border-accent-support text-accent-support' : ''}`}
+          >
+            <Filter className="w-4 h-4" /> Filter
+            {activeFilters > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-accent-support text-white text-[9px] font-black flex items-center justify-center">{activeFilters}</span>
+            )}
+          </button>
+        </div>
+
+        <AnimatePresence>
+          {showFilter && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="bg-white border border-bento-border rounded-2xl p-4 flex flex-wrap gap-4 items-end"
+            >
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-bento-muted uppercase tracking-widest">Priority</label>
+                <select
+                  value={priorityFilter}
+                  onChange={e => setPriorityFilter(e.target.value)}
+                  className="px-3 py-2 rounded-xl bg-bento-bg border border-bento-border text-[12px] font-bold outline-none cursor-pointer"
+                >
+                  <option value="">All</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-bento-muted uppercase tracking-widest">Status</label>
+                <select
+                  value={statusFilter}
+                  onChange={e => setStatusFilter(e.target.value)}
+                  className="px-3 py-2 rounded-xl bg-bento-bg border border-bento-border text-[12px] font-bold outline-none cursor-pointer"
+                >
+                  <option value="">All</option>
+                  <option value="open">Open</option>
+                  <option value="in-progress">In Progress</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="closed">Closed</option>
+                </select>
+              </div>
+              {activeFilters > 0 && (
+                <button
+                  onClick={() => { setPriorityFilter(''); setStatusFilter(''); }}
+                  className="text-[11px] font-bold text-red-500 hover:underline flex items-center gap-1"
+                >
+                  <X className="w-3 h-3" /> Clear
+                </button>
+              )}
+              <p className="text-[11px] text-bento-muted font-bold ml-auto">{filteredTickets.length} of {tickets.length} tickets</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
       <div className="grid grid-cols-1 gap-4">
         <AnimatePresence>
-          {tickets.map((ticket, i) => (
+          {filteredTickets.map((ticket, i) => (
             <motion.div key={ticket.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }} className="dashboard-card group hover:border-bento-text/20 transition-all">
               <div className="flex flex-col md:flex-row gap-6">
                 <div className="flex-1 space-y-3">
@@ -232,6 +333,12 @@ export default function Support() {
             </motion.div>
           ))}
         </AnimatePresence>
+        {filteredTickets.length === 0 && (
+          <div className="py-12 text-center text-bento-muted font-medium italic bg-bento-bg/30 rounded-2xl border border-dashed border-bento-border">
+            No tickets match your search.
+          </div>
+        )}
+      </div>
       </div>
 
       {/* Create Ticket Modal */}

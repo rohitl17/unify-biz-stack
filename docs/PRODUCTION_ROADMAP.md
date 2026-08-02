@@ -79,7 +79,7 @@ This document tracks what has been built and what remains to reach production qu
   - [ ] "Summarize" button on CustomerDetail — sends last N activities to Gemini, returns executive summary
   - [ ] "Next Best Action" — suggests follow-up based on health score, open tickets, activity recency
   - [ ] Lead prioritization — rank leads by predicted close probability
-- [ ] **In-app notifications**: The bell icon in the header is rendered but non-functional. Wire it to a `notifications` Firestore collection; surface alerts for high-priority tickets, health score drops below 60, and tasks due today.
+- [x] **In-app notifications**: Bell icon with unread badge and dropdown, derived client-side from existing state (no separate collection) — high/urgent open tickets, computed health below 60, tasks due today or overdue (`src/lib/notifications.ts`). Read state persisted per-user in localStorage.
 - [x] **CSV Import/Export**: Client-side CSV export for leads; CSV import for bulk lead creation with per-row validation and preview (`src/lib/csv.ts`).
 - [ ] **CI/CD**: GitHub Actions — `tsc --noEmit` + deploy to Firebase Hosting on push to `main`.
 

@@ -37,12 +37,13 @@ interface CustomerSuccessProps {
   tickets: any[];
   activities: any[];
   engagements: any[];
+  searchQuery: string;
+  setSearchQuery: (v: string) => void;
 }
 
-export default function CustomerSuccess({ onSelectCustomer, tickets, activities, engagements }: CustomerSuccessProps) {
+export default function CustomerSuccess({ onSelectCustomer, tickets, activities, engagements, searchQuery, setSearchQuery }: CustomerSuccessProps) {
   const { user, profile } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [newCust, setNewCust] = useState({ name: '', plan: 'pro' as Customer['plan'] });
   const [editingScoreFor, setEditingScoreFor] = useState<string | null>(null);

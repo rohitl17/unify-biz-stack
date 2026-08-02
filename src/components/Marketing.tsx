@@ -15,6 +15,8 @@ import {
   Target,
   Rocket,
   X,
+  Search,
+  Filter,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -37,9 +39,13 @@ interface CampaignAnalytics {
 
 interface MarketingProps {
   leads: any[];
+  searchQuery: string;
+  setSearchQuery: (v: string) => void;
+  statusFilter: string;
+  setStatusFilter: (v: string) => void;
 }
 
-export default function Marketing({ leads: allLeads }: MarketingProps) {
+export default function Marketing({ leads: allLeads, searchQuery, setSearchQuery, statusFilter, setStatusFilter }: MarketingProps) {
   const { user, profile } = useAuth();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [isAdding, setIsAdding] = useState(false);
@@ -105,6 +111,12 @@ export default function Marketing({ leads: allLeads }: MarketingProps) {
   const wonLeads = allLeads.filter(l => l.stage === 'closed_won').length;
   const realConversion = totalLeadsGenerated > 0 ? Math.round((wonLeads / totalLeadsGenerated) * 100) : 0;
 
+  const filteredCampaigns = campaigns.filter(c => {
+    const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || c.type.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = !statusFilter || c.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -140,9 +152,36 @@ export default function Marketing({ leads: allLeads }: MarketingProps) {
         </div>
       </div>
 
+      <div className="flex items-center gap-3 px-1">
+        <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-bento-border flex-1 text-sm">
+          <Search className="w-4 h-4 text-bento-muted" />
+          <input
+            type="text"
+            placeholder="Search campaigns..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="bg-transparent border-none outline-none w-full font-bold text-sm text-bento-text placeholder:text-bento-muted/50"
+          />
+        </div>
+        <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-2xl border border-bento-border text-sm">
+          <Filter className="w-4 h-4 text-bento-muted shrink-0" />
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+            className="bg-transparent border-none outline-none font-bold text-sm text-bento-text cursor-pointer appearance-none"
+          >
+            <option value="">All statuses</option>
+            <option value="planned">Planned</option>
+            <option value="active">Active</option>
+            <option value="paused">Paused</option>
+            <option value="completed">Completed</option>
+          </select>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <AnimatePresence>
-          {campaigns.map((camp, i) => (
+          {filteredCampaigns.map((camp, i) => (
             <motion.div
               key={camp.id}
               initial={{ opacity: 0, scale: 0.98 }}
@@ -189,6 +228,11 @@ export default function Marketing({ leads: allLeads }: MarketingProps) {
             </motion.div>
           ))}
         </AnimatePresence>
+        {filteredCampaigns.length === 0 && (
+          <div className="md:col-span-2 py-12 text-center text-bento-muted font-medium italic bg-bento-bg/30 rounded-2xl border border-dashed border-bento-border">
+            No campaigns match your search.
+          </div>
+        )}
       </div>
 
       {/* Create Campaign Modal */}

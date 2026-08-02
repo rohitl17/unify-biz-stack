@@ -16,11 +16,16 @@ import {
   LayoutDashboard,
   ChevronRight,
   CheckCircle2 as CheckCircleIcon,
-  Settings
+  Settings,
+  Bell,
+  AlertTriangle,
+  ClipboardCheck,
+  HeartCrack,
 } from 'lucide-react';
 import { onSnapshot, orderBy, limit, where } from 'firebase/firestore';
 import { orgQuery } from './lib/firestoreWithOrg';
 import { effectiveHealth } from './lib/healthScore';
+import { buildNotifications, AppNotification } from './lib/notifications';
 import { runSeed } from './lib/seed';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -76,6 +81,23 @@ function AppContent() {
   const [seeding, setSeeding] = useState(false);
   const [seedMessage, setSeedMessage] = useState<string | null>(null);
 
+  // Module filter/search state lives here (not inside each module component)
+  // so it survives the CustomerDetail detour, which unmounts the module.
+  const [salesSearchQuery, setSalesSearchQuery] = useState('');
+  const [salesShowFilter, setSalesShowFilter] = useState(false);
+  const [salesFilterStatus, setSalesFilterStatus] = useState('');
+  const [salesFilterStage, setSalesFilterStage] = useState('');
+  const [successSearchQuery, setSuccessSearchQuery] = useState('');
+  const [supportSearchQuery, setSupportSearchQuery] = useState('');
+  const [supportShowFilter, setSupportShowFilter] = useState(false);
+  const [supportPriorityFilter, setSupportPriorityFilter] = useState('');
+  const [supportStatusFilter, setSupportStatusFilter] = useState('');
+  const [marketingSearchQuery, setMarketingSearchQuery] = useState('');
+  const [marketingStatusFilter, setMarketingStatusFilter] = useState('');
+
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     if (!user || !profile?.orgId) return;
     const orgId = profile.orgId;
@@ -113,6 +135,36 @@ function AppContent() {
     ? Math.round(healthScores.reduce((sum, s) => sum + s, 0) / customers.length)
     : 0;
   const atRiskCount = healthScores.filter(s => s < 60).length;
+
+  const notifications = buildNotifications(customers, tickets, activities, engagements, tasks);
+  const unreadCount = notifications.filter(n => !readIds.has(n.id)).length;
+
+  const notifStorageKey = user ? `nexus-read-notifs-${user.uid}` : null;
+  useEffect(() => {
+    if (!notifStorageKey) return;
+    try {
+      const stored = localStorage.getItem(notifStorageKey);
+      if (stored) setReadIds(new Set(JSON.parse(stored)));
+    } catch { /* ignore malformed storage */ }
+  }, [notifStorageKey]);
+
+  const markRead = (ids: string[]) => {
+    setReadIds(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.add(id));
+      if (notifStorageKey) {
+        try { localStorage.setItem(notifStorageKey, JSON.stringify([...next])); } catch { /* ignore quota errors */ }
+      }
+      return next;
+    });
+  };
+
+  const goToNotification = (n: AppNotification) => {
+    markRead([n.id]);
+    setActiveModule(n.module as Module);
+    setSelectedCustomerName(n.customerName || null);
+    setNotifOpen(false);
+  };
 
   const activeCampaigns = campaigns.filter(c => c.status === 'active');
   const nextCampaign = campaigns.find(c => c.startDate && new Date(c.startDate) > new Date());
@@ -348,6 +400,69 @@ function AppContent() {
           </div>
         )}
         <div className={`h-full overflow-y-auto ${isMobileNav ? 'p-4 pb-24' : 'p-6'}`}>
+            <div className="relative flex justify-end mb-4">
+              <button
+                onClick={() => setNotifOpen(o => !o)}
+                className="relative p-2.5 bg-white border border-bento-border rounded-xl text-bento-muted hover:text-bento-text transition-colors"
+                title="Notifications"
+              >
+                <Bell className="w-[18px] h-[18px]" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+              <AnimatePresence>
+                {notifOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="absolute top-12 right-0 w-[340px] max-h-[420px] overflow-y-auto bg-white border border-bento-border rounded-2xl shadow-2xl z-30"
+                  >
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-bento-bg sticky top-0 bg-white">
+                      <p className="text-sm font-extrabold text-bento-text">Notifications</p>
+                      {unreadCount > 0 && (
+                        <button
+                          onClick={() => markRead(notifications.map(n => n.id))}
+                          className="text-[11px] font-bold text-accent-sales hover:underline"
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                    </div>
+                    {notifications.length === 0 ? (
+                      <div className="py-10 text-center text-bento-muted">
+                        <CheckCircleIcon className="w-6 h-6 mx-auto mb-2 opacity-20" />
+                        <p className="text-xs font-bold italic">Nothing needs attention</p>
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-bento-bg">
+                        {notifications.map(n => {
+                          const Icon = n.module === 'success' ? HeartCrack : n.module === 'support' ? AlertTriangle : ClipboardCheck;
+                          const unread = !readIds.has(n.id);
+                          return (
+                            <button
+                              key={n.id}
+                              onClick={() => goToNotification(n)}
+                              className={`w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-bento-bg/60 transition-colors ${unread ? 'bg-accent-sales/5' : ''}`}
+                            >
+                              <Icon className={`w-4 h-4 mt-0.5 shrink-0 ${n.severity === 'high' ? 'text-red-500' : 'text-amber-500'}`} />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[13px] font-bold text-bento-text leading-tight truncate">{n.title}</p>
+                                <p className="text-[11px] text-bento-muted font-medium mt-0.5">{n.subtitle}</p>
+                              </div>
+                              {unread && <div className="w-1.5 h-1.5 rounded-full bg-accent-sales shrink-0 mt-1.5" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
             {joinedOrgName && (
               <motion.div
                 initial={{ opacity: 0, y: -8 }}
@@ -532,16 +647,38 @@ function AppContent() {
                   </div>
                 )}
                 {activeModule === 'sales' && !selectedCustomerName && (
-                  <Sales onSelectCustomer={(name) => { setSelectedCustomerName(name); }} campaigns={campaigns} customers={customers} />
+                  <Sales
+                    onSelectCustomer={(name) => { setSelectedCustomerName(name); }}
+                    campaigns={campaigns}
+                    customers={customers}
+                    searchQuery={salesSearchQuery} setSearchQuery={setSalesSearchQuery}
+                    showFilter={salesShowFilter} setShowFilter={setSalesShowFilter}
+                    filterStatus={salesFilterStatus} setFilterStatus={setSalesFilterStatus}
+                    filterStage={salesFilterStage} setFilterStage={setSalesFilterStage}
+                  />
                 )}
-                {activeModule === 'support' && !selectedCustomerName && <Support />}
-                {activeModule === 'marketing' && !selectedCustomerName && <Marketing leads={leads} />}
+                {activeModule === 'support' && !selectedCustomerName && (
+                  <Support
+                    searchQuery={supportSearchQuery} setSearchQuery={setSupportSearchQuery}
+                    showFilter={supportShowFilter} setShowFilter={setSupportShowFilter}
+                    priorityFilter={supportPriorityFilter} setPriorityFilter={setSupportPriorityFilter}
+                    statusFilter={supportStatusFilter} setStatusFilter={setSupportStatusFilter}
+                  />
+                )}
+                {activeModule === 'marketing' && !selectedCustomerName && (
+                  <Marketing
+                    leads={leads}
+                    searchQuery={marketingSearchQuery} setSearchQuery={setMarketingSearchQuery}
+                    statusFilter={marketingStatusFilter} setStatusFilter={setMarketingStatusFilter}
+                  />
+                )}
                 {activeModule === 'success' && !selectedCustomerName && (
                   <CustomerSuccess
                     onSelectCustomer={(name) => { setSelectedCustomerName(name); }}
                     tickets={tickets}
                     activities={activities}
                     engagements={engagements}
+                    searchQuery={successSearchQuery} setSearchQuery={setSuccessSearchQuery}
                   />
                 )}
                 {activeModule === 'admin' && !selectedCustomerName && <Admin />}
