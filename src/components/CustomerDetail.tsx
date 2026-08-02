@@ -29,6 +29,7 @@ import {
   Users as UsersIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { effectiveHealth } from '../lib/healthScore';
 
 interface CustomerDetailProps {
   customerName: string;
@@ -109,6 +110,13 @@ export default function CustomerDetail({ customerName, onBack }: CustomerDetailP
     };
   }, [customerName, profile?.orgId]);
 
+  const health = effectiveHealth(
+    { name: customerName, renewalDate: successData?.renewalDate, healthScoreOverride: successData?.healthScoreOverride },
+    supportTickets,
+    activities,
+    marketingEngagement
+  );
+
   const handleLogActivity = async (type: 'note' | 'call' | 'meeting') => {
     if (!newNote.trim() || !profile?.orgId) return;
     try {
@@ -166,9 +174,14 @@ export default function CustomerDetail({ customerName, onBack }: CustomerDetailP
             </div>
           </div>
           <div className="text-right">
-             <p className="text-[10px] text-bento-muted font-extrabold uppercase tracking-widest">Health Score</p>
-             <p className={`text-4xl font-black ${successData?.healthScore >= 80 ? 'text-accent-cs' : successData?.healthScore >= 60 ? 'text-accent-support' : 'text-red-500'}`}>
-                {successData?.healthScore || 0}%
+             <p className="text-[10px] text-bento-muted font-extrabold uppercase tracking-widest">
+               Health Score {health.isOverride ? '· manual' : '· auto'}
+             </p>
+             <p
+               className={`text-4xl font-black ${health.score >= 80 ? 'text-accent-cs' : health.score >= 60 ? 'text-accent-support' : 'text-red-500'}`}
+               title={health.factors.map(f => `${f.delta > 0 ? '+' : ''}${f.delta} ${f.label}`).join('\n')}
+             >
+                {health.score}%
              </p>
           </div>
         </div>
@@ -247,7 +260,7 @@ export default function CustomerDetail({ customerName, onBack }: CustomerDetailP
         <section className="dashboard-card col-span-1">
           <span className="pill pill-support uppercase mb-3">CS Roadmap</span>
           {(() => {
-            const health = successData?.healthScore || 0;
+            const healthScore = health.score;
             const activityCount = activities.length;
             const daysToRenewal = successData?.renewalDate
               ? Math.ceil((new Date(successData.renewalDate).getTime() - Date.now()) / 86400000)
@@ -262,9 +275,9 @@ export default function CustomerDetail({ customerName, onBack }: CustomerDetailP
               },
               {
                 label: 'Expansion',
-                done: health >= 80 && activityCount >= 3,
-                active: health >= 60 && activityCount >= 1,
-                desc: health >= 80 ? 'Health strong' : `Health at ${health}%`,
+                done: healthScore >= 80 && activityCount >= 3,
+                active: healthScore >= 60 && activityCount >= 1,
+                desc: healthScore >= 80 ? 'Health strong' : `Health at ${healthScore}%`,
               },
               {
                 label: 'Renewal',
@@ -274,9 +287,9 @@ export default function CustomerDetail({ customerName, onBack }: CustomerDetailP
               },
               {
                 label: 'Advocacy',
-                done: health >= 90 && activityCount >= 5,
-                active: health >= 80 && activityCount >= 3,
-                desc: health >= 90 ? 'NPS candidate' : 'Build health first',
+                done: healthScore >= 90 && activityCount >= 5,
+                active: healthScore >= 80 && activityCount >= 3,
+                desc: healthScore >= 90 ? 'NPS candidate' : 'Build health first',
               },
             ];
 

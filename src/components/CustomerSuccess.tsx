@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   onSnapshot,
   updateDoc,
+  deleteField,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { addOrgDoc, orgQuery, orgDoc } from '../lib/firestoreWithOrg';
@@ -18,11 +19,14 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { initials, avatarColors } from '../lib/avatar';
+import { findNameMatch } from '../lib/customerMatch';
+import { effectiveHealth } from '../lib/healthScore';
 
 interface Customer {
   id: string;
   name: string;
   healthScore: number;
+  healthScoreOverride?: number;
   plan: 'basic' | 'pro' | 'enterprise';
   renewalDate: string;
   successManagerId: string;
@@ -30,14 +34,18 @@ interface Customer {
 
 interface CustomerSuccessProps {
   onSelectCustomer: (name: string) => void;
+  tickets: any[];
+  activities: any[];
+  engagements: any[];
+  searchQuery: string;
+  setSearchQuery: (v: string) => void;
 }
 
-export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessProps) {
+export default function CustomerSuccess({ onSelectCustomer, tickets, activities, engagements, searchQuery, setSearchQuery }: CustomerSuccessProps) {
   const { user, profile } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
   const [isAdding, setIsAdding] = useState(false);
-  const [newCust, setNewCust] = useState({ name: '', plan: 'pro' as Customer['plan'], healthScore: 80 });
+  const [newCust, setNewCust] = useState({ name: '', plan: 'pro' as Customer['plan'] });
   const [editingScoreFor, setEditingScoreFor] = useState<string | null>(null);
   const [editingScoreValue, setEditingScoreValue] = useState('');
   const [editingPlanFor, setEditingPlanFor] = useState<string | null>(null);
@@ -54,9 +62,11 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
     return () => unsub();
   }, [user, profile?.orgId]);
 
+  const newCustMatch = findNameMatch(newCust.name, customers.map(c => c.name));
+
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profile?.orgId) return;
+    if (!profile?.orgId || newCustMatch) return;
     try {
       await addOrgDoc('customers', {
         ...newCust,
@@ -64,23 +74,36 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
         renewalDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
       }, profile.orgId);
       setIsAdding(false);
-      setNewCust({ name: '', plan: 'pro', healthScore: 80 });
+      setNewCust({ name: '', plan: 'pro' });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'customers');
     }
   };
 
+  // Manual edit stores an override; the computed score stays available to
+  // return to via resetHealthScore.
   const saveHealthScore = async (custId: string) => {
     if (!profile?.orgId) return;
     const val = Math.min(100, Math.max(0, Number(editingScoreValue)));
     if (isNaN(val)) { setEditingScoreFor(null); return; }
     try {
-      await updateDoc(orgDoc(profile.orgId, 'customers', custId), { healthScore: val });
+      await updateDoc(orgDoc(profile.orgId, 'customers', custId), { healthScoreOverride: val });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `customers/${custId}`);
     }
     setEditingScoreFor(null);
   };
+
+  const resetHealthScore = async (custId: string) => {
+    if (!profile?.orgId) return;
+    try {
+      await updateDoc(orgDoc(profile.orgId, 'customers', custId), { healthScoreOverride: deleteField() });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `customers/${custId}`);
+    }
+  };
+
+  const healthFor = (cust: Customer) => effectiveHealth(cust, tickets, activities, engagements);
 
   const savePlan = async (custId: string, newPlan: Customer['plan']) => {
     if (!profile?.orgId) return;
@@ -136,7 +159,7 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
       cust.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       cust.plan.toLowerCase().includes(searchQuery.toLowerCase())
     )
-    .sort((a, b) => b.healthScore - a.healthScore);
+    .sort((a, b) => healthFor(b).score - healthFor(a).score);
 
   return (
     <div className="space-y-6">
@@ -217,7 +240,9 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
 
                   <div className="flex items-center gap-3 shrink-0">
                     <div className="text-right">
-                      <p className="text-[10px] text-bento-muted font-bold uppercase tracking-widest">Health</p>
+                      <p className="text-[10px] text-bento-muted font-bold uppercase tracking-widest">
+                        Health {healthFor(cust).isOverride ? '· manual' : '· auto'}
+                      </p>
                       {editingScoreFor === cust.id ? (
                         <div className="flex items-center gap-1 mt-0.5" onClick={e => e.stopPropagation()}>
                           <input
@@ -234,12 +259,20 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
                         </div>
                       ) : (
                         <p
-                          className={`text-2xl font-black cursor-pointer hover:underline underline-offset-2 ${getHealthColor(cust.healthScore)}`}
-                          title="Click to edit"
-                          onClick={(e) => { e.stopPropagation(); setEditingScoreFor(cust.id); setEditingScoreValue(String(cust.healthScore)); }}
+                          className={`text-2xl font-black cursor-pointer hover:underline underline-offset-2 ${getHealthColor(healthFor(cust).score)}`}
+                          title={healthFor(cust).factors.map(f => `${f.delta > 0 ? '+' : ''}${f.delta} ${f.label}`).join('\n') + '\n\nClick to override'}
+                          onClick={(e) => { e.stopPropagation(); setEditingScoreFor(cust.id); setEditingScoreValue(String(healthFor(cust).score)); }}
                         >
-                          {cust.healthScore}%
+                          {healthFor(cust).score}%
                         </p>
+                      )}
+                      {healthFor(cust).isOverride && editingScoreFor !== cust.id && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); resetHealthScore(cust.id); }}
+                          className="text-[10px] font-bold text-bento-muted hover:text-accent-cs underline underline-offset-2"
+                        >
+                          Reset to auto
+                        </button>
                       )}
                     </div>
                     <div className="flex flex-col gap-1">
@@ -321,24 +354,28 @@ export default function CustomerSuccess({ onSelectCustomer }: CustomerSuccessPro
               <div className="space-y-2">
                 <label className="text-xs font-bold text-bento-muted uppercase tracking-widest">Account Name</label>
                 <input type="text" required className="w-full px-4 py-3 rounded-xl bg-bento-bg border border-bento-border focus:ring-2 focus:ring-accent-cs outline-none transition-all font-medium" value={newCust.name} onChange={e => setNewCust({ ...newCust, name: e.target.value })} />
+                {newCustMatch && (
+                  <p className="text-[11px] font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    {newCustMatch.kind === 'exact'
+                      ? `An account named "${newCustMatch.name}" already exists.`
+                      : `This looks like existing account "${newCustMatch.name}" — creating a duplicate would split its history across two records.`}
+                  </p>
+                )}
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-bento-muted uppercase tracking-widest">Plan</label>
-                  <select className="w-full px-4 py-3 rounded-xl bg-bento-bg border border-bento-border outline-none appearance-none cursor-pointer font-medium" value={newCust.plan} onChange={e => setNewCust({ ...newCust, plan: e.target.value as Customer['plan'] })}>
-                    <option value="basic">Basic</option>
-                    <option value="pro">Pro</option>
-                    <option value="enterprise">Enterprise</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-bento-muted uppercase tracking-widest">Initial Health (%)</label>
-                  <input type="number" max="100" min="0" required className="w-full px-4 py-3 rounded-xl bg-bento-bg border border-bento-border focus:ring-2 focus:ring-accent-cs outline-none transition-all font-medium" value={newCust.healthScore} onChange={e => setNewCust({ ...newCust, healthScore: Number(e.target.value) })} />
-                </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-bento-muted uppercase tracking-widest">Plan</label>
+                <select className="w-full px-4 py-3 rounded-xl bg-bento-bg border border-bento-border outline-none appearance-none cursor-pointer font-medium" value={newCust.plan} onChange={e => setNewCust({ ...newCust, plan: e.target.value as Customer['plan'] })}>
+                  <option value="basic">Basic</option>
+                  <option value="pro">Pro</option>
+                  <option value="enterprise">Enterprise</option>
+                </select>
               </div>
+              <p className="text-[11px] text-bento-muted font-medium">
+                Health score is computed automatically from open tickets, recent activity, engagement, and renewal timing. You can override it later from the account card.
+              </p>
               <div className="flex gap-4 pt-4">
                 <button type="button" onClick={() => setIsAdding(false)} className="btn-secondary flex-1">Cancel</button>
-                <button type="submit" className="btn-primary flex-1">Save Account</button>
+                <button type="submit" disabled={!!newCustMatch} className="btn-primary flex-1 disabled:opacity-50">Save Account</button>
               </div>
             </form>
           </motion.div>

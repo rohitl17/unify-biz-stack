@@ -14,7 +14,8 @@ Accounts under active management.
 | Field | Type | Notes |
 |---|---|---|
 | `name` | string | Primary join key used by all other collections |
-| `healthScore` | number | 0–100; editable inline in Customer Success |
+| `healthScore` | number | Legacy stored score (seed data); display now uses the computed score |
+| `healthScoreOverride` | number? | Optional manual override; when absent, health is computed live by `src/lib/healthScore.ts` from open tickets, recent activities, engagement, and renewal proximity |
 | `plan` | enum | `basic` \| `pro` \| `enterprise` |
 | `renewalDate` | ISO string | Used for renewal countdown |
 | `successManagerId` | string (uid) | Owner |

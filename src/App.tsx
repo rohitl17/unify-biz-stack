@@ -16,10 +16,16 @@ import {
   LayoutDashboard,
   ChevronRight,
   CheckCircle2 as CheckCircleIcon,
-  Settings
+  Settings,
+  Bell,
+  AlertTriangle,
+  ClipboardCheck,
+  HeartCrack,
 } from 'lucide-react';
 import { onSnapshot, orderBy, limit, where } from 'firebase/firestore';
 import { orgQuery } from './lib/firestoreWithOrg';
+import { effectiveHealth } from './lib/healthScore';
+import { buildNotifications, AppNotification } from './lib/notifications';
 import { runSeed } from './lib/seed';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -69,10 +75,28 @@ function AppContent() {
   const [leads, setLeads] = useState<any[]>([]);
   const [tickets, setTickets] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
+  const [activities, setActivities] = useState<any[]>([]);
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [engagements, setEngagements] = useState<any[]>([]);
   const [seeding, setSeeding] = useState(false);
   const [seedMessage, setSeedMessage] = useState<string | null>(null);
+
+  // Module filter/search state lives here (not inside each module component)
+  // so it survives the CustomerDetail detour, which unmounts the module.
+  const [salesSearchQuery, setSalesSearchQuery] = useState('');
+  const [salesShowFilter, setSalesShowFilter] = useState(false);
+  const [salesFilterStatus, setSalesFilterStatus] = useState('');
+  const [salesFilterStage, setSalesFilterStage] = useState('');
+  const [successSearchQuery, setSuccessSearchQuery] = useState('');
+  const [supportSearchQuery, setSupportSearchQuery] = useState('');
+  const [supportShowFilter, setSupportShowFilter] = useState(false);
+  const [supportPriorityFilter, setSupportPriorityFilter] = useState('');
+  const [supportStatusFilter, setSupportStatusFilter] = useState('');
+  const [marketingSearchQuery, setMarketingSearchQuery] = useState('');
+  const [marketingStatusFilter, setMarketingStatusFilter] = useState('');
+
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!user || !profile?.orgId) return;
@@ -82,8 +106,10 @@ function AppContent() {
         (snap) => setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}),
       onSnapshot(orgQuery('leads', orgId, orderBy('createdAt', 'desc')),
         (snap) => setLeads(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}),
-      onSnapshot(orgQuery('tickets', orgId, orderBy('createdAt', 'desc'), limit(5)),
+      onSnapshot(orgQuery('tickets', orgId, orderBy('createdAt', 'desc')),
         (snap) => setTickets(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}),
+      onSnapshot(orgQuery('activities', orgId),
+        (snap) => setActivities(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}),
       onSnapshot(orgQuery('customers', orgId),
         (snap) => setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => {}),
       onSnapshot(orgQuery('campaigns', orgId, orderBy('startDate', 'asc')),
@@ -104,10 +130,41 @@ function AppContent() {
   const wonLeads = leads.filter(l => l.stage === 'closed_won').length;
   const winRate = totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0;
 
+  const healthScores = customers.map(c => effectiveHealth(c, tickets, activities, engagements).score);
   const avgHealthScore = customers.length > 0
-    ? Math.round(customers.reduce((sum, c) => sum + (Number(c.healthScore) || 0), 0) / customers.length)
+    ? Math.round(healthScores.reduce((sum, s) => sum + s, 0) / customers.length)
     : 0;
-  const atRiskCount = customers.filter(c => (Number(c.healthScore) || 0) < 60).length;
+  const atRiskCount = healthScores.filter(s => s < 60).length;
+
+  const notifications = buildNotifications(customers, tickets, activities, engagements, tasks);
+  const unreadCount = notifications.filter(n => !readIds.has(n.id)).length;
+
+  const notifStorageKey = user ? `nexus-read-notifs-${user.uid}` : null;
+  useEffect(() => {
+    if (!notifStorageKey) return;
+    try {
+      const stored = localStorage.getItem(notifStorageKey);
+      if (stored) setReadIds(new Set(JSON.parse(stored)));
+    } catch { /* ignore malformed storage */ }
+  }, [notifStorageKey]);
+
+  const markRead = (ids: string[]) => {
+    setReadIds(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.add(id));
+      if (notifStorageKey) {
+        try { localStorage.setItem(notifStorageKey, JSON.stringify([...next])); } catch { /* ignore quota errors */ }
+      }
+      return next;
+    });
+  };
+
+  const goToNotification = (n: AppNotification) => {
+    markRead([n.id]);
+    setActiveModule(n.module as Module);
+    setSelectedCustomerName(n.customerName || null);
+    setNotifOpen(false);
+  };
 
   const activeCampaigns = campaigns.filter(c => c.status === 'active');
   const nextCampaign = campaigns.find(c => c.startDate && new Date(c.startDate) > new Date());
@@ -119,6 +176,11 @@ function AppContent() {
   const thisMonthEng = engagements.filter(e => toMs(e.timestamp) >= thisMonthStart).length;
   const lastMonthEng = engagements.filter(e => { const ms = toMs(e.timestamp); return ms >= lastMonthStart && ms < thisMonthStart; }).length;
   const engagementDelta = lastMonthEng > 0 ? Math.round(((thisMonthEng - lastMonthEng) / lastMonthEng) * 100) : null;
+
+  // Brand-new org: no data in any collection yet. Show a guided first-run
+  // state on Overview instead of six empty bento cards.
+  const isEmptyOrg = leads.length === 0 && customers.length === 0 && tickets.length === 0
+    && campaigns.length === 0 && tasks.length === 0 && engagements.length === 0 && activities.length === 0;
 
   const formatCurrency = (n: number) =>
     n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(1)}M` :
@@ -338,6 +400,69 @@ function AppContent() {
           </div>
         )}
         <div className={`h-full overflow-y-auto ${isMobileNav ? 'p-4 pb-24' : 'p-6'}`}>
+            <div className="relative flex justify-end mb-4">
+              <button
+                onClick={() => setNotifOpen(o => !o)}
+                className="relative p-2.5 bg-white border border-bento-border rounded-xl text-bento-muted hover:text-bento-text transition-colors"
+                title="Notifications"
+              >
+                <Bell className="w-[18px] h-[18px]" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+              <AnimatePresence>
+                {notifOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="absolute top-12 right-0 w-[340px] max-h-[420px] overflow-y-auto bg-white border border-bento-border rounded-2xl shadow-2xl z-30"
+                  >
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-bento-bg sticky top-0 bg-white">
+                      <p className="text-sm font-extrabold text-bento-text">Notifications</p>
+                      {unreadCount > 0 && (
+                        <button
+                          onClick={() => markRead(notifications.map(n => n.id))}
+                          className="text-[11px] font-bold text-accent-sales hover:underline"
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                    </div>
+                    {notifications.length === 0 ? (
+                      <div className="py-10 text-center text-bento-muted">
+                        <CheckCircleIcon className="w-6 h-6 mx-auto mb-2 opacity-20" />
+                        <p className="text-xs font-bold italic">Nothing needs attention</p>
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-bento-bg">
+                        {notifications.map(n => {
+                          const Icon = n.module === 'success' ? HeartCrack : n.module === 'support' ? AlertTriangle : ClipboardCheck;
+                          const unread = !readIds.has(n.id);
+                          return (
+                            <button
+                              key={n.id}
+                              onClick={() => goToNotification(n)}
+                              className={`w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-bento-bg/60 transition-colors ${unread ? 'bg-accent-sales/5' : ''}`}
+                            >
+                              <Icon className={`w-4 h-4 mt-0.5 shrink-0 ${n.severity === 'high' ? 'text-red-500' : 'text-amber-500'}`} />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[13px] font-bold text-bento-text leading-tight truncate">{n.title}</p>
+                                <p className="text-[11px] text-bento-muted font-medium mt-0.5">{n.subtitle}</p>
+                              </div>
+                              {unread && <div className="w-1.5 h-1.5 rounded-full bg-accent-sales shrink-0 mt-1.5" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
             {joinedOrgName && (
               <motion.div
                 initial={{ opacity: 0, y: -8 }}
@@ -364,7 +489,42 @@ function AppContent() {
                 transition={{ duration: 0.2 }}
                 className="h-full"
               >
-                {activeModule === 'overview' && (
+                {activeModule === 'overview' && isEmptyOrg && (
+                  <div className="h-full flex items-center justify-center">
+                    <div className="max-w-xl w-full space-y-8">
+                      <div className="space-y-2">
+                        <h1 className="text-4xl font-extrabold text-bento-text tracking-tighter">Welcome to Nexus 👋</h1>
+                        <p className="text-bento-muted font-medium text-lg">
+                          Your workspace is empty. Pick a starting point — everything you add shows up across every module instantly.
+                        </p>
+                      </div>
+                      <div className="space-y-3">
+                        {[
+                          { icon: TrendingUp, accent: 'text-accent-sales', bg: 'bg-[#dbeafe]', title: 'Add your first lead', desc: 'Start your pipeline — closing a deal creates a customer account automatically.', module: 'sales' as Module },
+                          { icon: LayoutDashboard, accent: 'text-accent-marketing', bg: 'bg-[#ede9fe]', title: 'Import leads from CSV', desc: 'Migrating from a spreadsheet? Bring your whole pipeline over in one step.', module: 'sales' as Module },
+                          { icon: MessageSquare, accent: 'text-accent-support', bg: 'bg-[#fef3c7]', title: 'Log a support ticket', desc: 'Track customer issues with a shared, chat-style activity thread.', module: 'support' as Module },
+                          ...(profile?.role === 'admin' ? [{ icon: ShieldCheck, accent: 'text-accent-cs', bg: 'bg-[#dcfce7]', title: 'Invite your team', desc: 'Add teammates with sales, support, marketing, or success roles.', module: 'admin' as Module }] : []),
+                        ].map((step) => (
+                          <button
+                            key={step.title}
+                            onClick={() => setActiveModule(step.module)}
+                            className="w-full dashboard-card flex-row items-center gap-4 text-left hover:border-bento-text/20 transition-all group"
+                          >
+                            <div className={`${step.bg} ${step.accent} w-11 h-11 rounded-xl flex items-center justify-center shrink-0`}>
+                              <step.icon className="w-[18px] h-[18px]" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-extrabold text-bento-text">{step.title}</p>
+                              <p className="text-sm text-bento-muted font-medium">{step.desc}</p>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-bento-border group-hover:text-bento-text transition-colors shrink-0" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {activeModule === 'overview' && !isEmptyOrg && (
                   <div className="bento-grid">
                     {/* SALES CARD */}
                     <section className="dashboard-card col-span-1 md:col-span-2 lg:row-span-2 justify-between">
@@ -416,7 +576,7 @@ function AppContent() {
                             <CheckCircleIcon className="w-6 h-6 mb-1 opacity-20" />
                             <p className="text-xs font-bold italic">No open tickets</p>
                           </div>
-                        ) : tickets.map((ticket) => (
+                        ) : tickets.slice(0, 5).map((ticket) => (
                           <div
                             key={ticket.id}
                             onClick={() => { setSelectedCustomerName(ticket.customerId); setActiveModule('success'); }}
@@ -487,12 +647,39 @@ function AppContent() {
                   </div>
                 )}
                 {activeModule === 'sales' && !selectedCustomerName && (
-                  <Sales onSelectCustomer={(name) => { setSelectedCustomerName(name); }} campaigns={campaigns} />
+                  <Sales
+                    onSelectCustomer={(name) => { setSelectedCustomerName(name); }}
+                    campaigns={campaigns}
+                    customers={customers}
+                    searchQuery={salesSearchQuery} setSearchQuery={setSalesSearchQuery}
+                    showFilter={salesShowFilter} setShowFilter={setSalesShowFilter}
+                    filterStatus={salesFilterStatus} setFilterStatus={setSalesFilterStatus}
+                    filterStage={salesFilterStage} setFilterStage={setSalesFilterStage}
+                  />
                 )}
-                {activeModule === 'support' && !selectedCustomerName && <Support />}
-                {activeModule === 'marketing' && !selectedCustomerName && <Marketing leads={leads} />}
+                {activeModule === 'support' && !selectedCustomerName && (
+                  <Support
+                    searchQuery={supportSearchQuery} setSearchQuery={setSupportSearchQuery}
+                    showFilter={supportShowFilter} setShowFilter={setSupportShowFilter}
+                    priorityFilter={supportPriorityFilter} setPriorityFilter={setSupportPriorityFilter}
+                    statusFilter={supportStatusFilter} setStatusFilter={setSupportStatusFilter}
+                  />
+                )}
+                {activeModule === 'marketing' && !selectedCustomerName && (
+                  <Marketing
+                    leads={leads}
+                    searchQuery={marketingSearchQuery} setSearchQuery={setMarketingSearchQuery}
+                    statusFilter={marketingStatusFilter} setStatusFilter={setMarketingStatusFilter}
+                  />
+                )}
                 {activeModule === 'success' && !selectedCustomerName && (
-                  <CustomerSuccess onSelectCustomer={(name) => { setSelectedCustomerName(name); }} />
+                  <CustomerSuccess
+                    onSelectCustomer={(name) => { setSelectedCustomerName(name); }}
+                    tickets={tickets}
+                    activities={activities}
+                    engagements={engagements}
+                    searchQuery={successSearchQuery} setSearchQuery={setSuccessSearchQuery}
+                  />
                 )}
                 {activeModule === 'admin' && !selectedCustomerName && <Admin />}
                 {selectedCustomerName && (
